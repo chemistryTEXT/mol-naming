@@ -336,9 +336,27 @@
                 <!-- 操作ガイドバー & 表示切り替え -->
                 <div id="draw-guide-banner" class="text-xs sm:text-sm bg-slate-800 text-white px-4 py-2.5 rounded-t-xl font-medium flex flex-wrap items-center justify-between gap-2">
                     <span id="draw-guide-text">💡 キャンバスの「C」をタップすると、そこから新しい炭素の枝（-CH₃）が増えます。白い場所をドラッグして自由に描くこともできます。</span>
-                    <button onclick="toggleCarbonDisplayMode()" id="btn-toggle-display" class="text-xs bg-slate-700 hover:bg-slate-600 text-slate-100 px-2.5 py-1 rounded border border-slate-500 shrink-0 transition">
-                        表示: すべてのCを表示中
-                    </button>
+                </div>
+
+                <!-- タブ1と完全に統一した3種類の表示スタイル切り替えバー -->
+                <div class="w-full flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 bg-slate-50 px-4 py-2.5 border-x-2 border-b border-slate-300">
+                    <span class="text-xs font-bold text-slate-600">
+                        📐 表示スタイルの切り替え：
+                    </span>
+                    <div class="flex flex-wrap gap-1.5">
+                        <button id="btn-draw-mode-full" onclick="setStructureDisplayMode('full')"
+                                class="text-xs bg-blue-600 text-white border border-blue-700 px-3 py-1.5 rounded-lg font-bold shadow-sm transition">
+                            📘 構造式（C・H・結合線をすべて表示）
+                        </button>
+                        <button id="btn-draw-mode-condensed" onclick="setStructureDisplayMode('condensed')"
+                                class="text-xs bg-white hover:bg-blue-50 text-slate-700 border border-slate-300 px-3 py-1.5 rounded-lg font-medium transition">
+                            📗 簡略構造式（CH₃・OH等で表示）
+                        </button>
+                        <button id="btn-draw-mode-skeletal" onclick="setStructureDisplayMode('skeletal')"
+                                class="text-xs bg-white hover:bg-blue-50 text-slate-700 border border-slate-300 px-3 py-1.5 rounded-lg font-medium transition">
+                            📙 骨格構造式（折れ線式）
+                        </button>
+                    </div>
                 </div>
 
                 <!-- 構造式お絵かきキャンバス本体 -->
@@ -954,7 +972,8 @@
         // 2. 直感的で使いやすい自作・構造式エディタ (HTML5 Canvas)
         // =====================================================
         let currentTool = 'bond1';
-        let showAllCarbons = true; // 高校化学向けにすべてのCを丸バッジで分かりやすく表示
+        let structureDisplayMode = 'condensed'; // 'full' | 'condensed' | 'skeletal'（初期値は編集しやすい簡略構造式に統一）
+        let lastDrawnSmiles = "";
         let chemGraph = {
             atoms: [], // { id, x, y, el: 'C'|'O'|'N'|'Cl'|'Br'|'COOH'|'CHO'|'NO2' }
             bonds: [], // { a1, a2, order: 1|2|3 }
@@ -971,15 +990,6 @@
             hoverBond: null
         };
         const BOND_LEN = 62; // 標準の結合の長さ(px)
-
-        function toggleCarbonDisplayMode() {
-            showAllCarbons = !showAllCarbons;
-            const btn = document.getElementById('btn-toggle-display');
-            if (btn) {
-                btn.textContent = showAllCarbons ? '表示: すべてのCを表示中' : '表示: 骨格(折れ線)モード';
-            }
-            renderChemCanvas();
-        }
 
         function saveHistory() {
             undoStack.push(JSON.stringify(chemGraph));
@@ -1306,14 +1316,15 @@
         }
 
         // キャンバス上の各原子・官能基の表示ラベルと色を取得
-        function getAtomDisplayInfo(atom) {
+        function getAtomDisplayInfo(atom, mode = structureDisplayMode) {
             if (atom.el === 'COOH') return { label: 'COOH', color: '#b91c1c', bg: '#fef2f2', border: '#fecaca' };
             if (atom.el === 'CHO')  return { label: 'CHO',  color: '#b45309', bg: '#fffbeb', border: '#fde68a' };
             if (atom.el === 'NO2')  return { label: 'NO₂',  color: '#1e40af', bg: '#eff6ff', border: '#bfdbfe' };
 
             const hCount = getImplicitHydrogens(atom);
             const subDigits = {'2':'₂','3':'₃','4':'₄'};
-            const hText = hCount > 0 ? 'H' + (subDigits[hCount] || '') : '';
+            // 「構造式(full)」モード時は水素を結合線として外側に展開するため、中心ラベルは元素記号のみにする
+            const hText = (mode !== 'full' && hCount > 0) ? 'H' + (subDigits[hCount] || '') : '';
             const label = atom.el + hText;
 
             const styleMap = {
@@ -1327,7 +1338,45 @@
             return { label, ...st };
         }
 
-        // キャンバスの描画処理
+        // お絵かきキャンバスの「📘 構造式（full）」モード用：各原子の暗黙の水素(H)の配置角度を計算
+        function getExplicitHydrogenAnglesForCanvasAtom(atom) {
+            const hCount = getImplicitHydrogens(atom);
+            if (hCount <= 0) return [];
+
+            const connected = getConnectedBonds(atom.id);
+            const usedAngles = connected.map(b => {
+                const otherId = b.a1 === atom.id ? b.a2 : b.a1;
+                const other = chemGraph.atoms.find(a => a.id === otherId);
+                return other ? Math.atan2(other.y - atom.y, other.x - atom.x) : 0;
+            });
+
+            if (usedAngles.length === 0) {
+                return [-Math.PI / 2, Math.PI / 2, Math.PI, 0].slice(0, hCount);
+            }
+            if (usedAngles.length === 1) {
+                const outAng = usedAngles[0] + Math.PI;
+                if (hCount === 1) return [outAng];
+                if (hCount === 2) return [outAng - Math.PI / 3, outAng + Math.PI / 3];
+                return [outAng - Math.PI / 2, outAng, outAng + Math.PI / 2];
+            }
+
+            const sorted = [...usedAngles].sort((a, b) => a - b);
+            let maxGap = -1;
+            let midAngle = 0;
+            for (let i = 0; i < sorted.length; i++) {
+                const a1 = sorted[i];
+                const a2 = (i === sorted.length - 1) ? sorted[0] + 2 * Math.PI : sorted[i + 1];
+                const gap = a2 - a1;
+                if (gap > maxGap) {
+                    maxGap = gap;
+                    midAngle = a1 + gap / 2;
+                }
+            }
+            if (hCount === 1) return [midAngle];
+            return [midAngle - Math.PI / 4.5, midAngle + Math.PI / 4.5];
+        }
+
+        // キャンバスの描画処理（タブ1と同じ3モード：full / condensed / skeletal に完全対応）
         function renderChemCanvas() {
             const canvas = document.getElementById('chem-draw-canvas');
             if (!canvas) return;
@@ -1356,6 +1405,27 @@
                 ctx.restore();
             }
 
+            // 「📘 構造式(full)」モード時は、各原子から出る水素(H)と結合線を先に描画
+            const explicitHydrogens = [];
+            if (structureDisplayMode === 'full') {
+                const hBondLen = BOND_LEN * 0.62;
+                for (const a of chemGraph.atoms) {
+                    const hAngles = getExplicitHydrogenAnglesForCanvasAtom(a);
+                    for (const ang of hAngles) {
+                        const hx = a.x + Math.cos(ang) * hBondLen;
+                        const hy = a.y + Math.sin(ang) * hBondLen;
+                        explicitHydrogens.push({ x: hx, y: hy });
+
+                        ctx.strokeStyle = '#475569';
+                        ctx.lineWidth = 2.2;
+                        ctx.beginPath();
+                        ctx.moveTo(a.x, a.y);
+                        ctx.lineTo(hx, hy);
+                        ctx.stroke();
+                    }
+                }
+            }
+
             // 結合の描画
             for (const b of chemGraph.bonds) {
                 const a1 = chemGraph.atoms.find(a => a.id === b.a1);
@@ -1363,7 +1433,7 @@
                 if (!a1 || !a2) continue;
 
                 const isHover = dragState.hoverBond === b;
-                ctx.strokeStyle = isHover ? (currentTool === 'eraser' ? '#ef4444' : '#059669') : '#334155';
+                ctx.strokeStyle = isHover ? (currentTool === 'eraser' ? '#ef4444' : '#059669') : '#1e293b';
                 ctx.lineWidth = isHover ? 4.5 : 3;
                 ctx.lineCap = 'round';
 
@@ -1399,14 +1469,31 @@
                 }
             }
 
+            // 「📘 構造式(full)」モードの展開された水素(H)ラベルを描画
+            if (structureDisplayMode === 'full') {
+                ctx.font = 'bold 13px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                for (const hPt of explicitHydrogens) {
+                    ctx.fillStyle = '#ffffff';
+                    ctx.beginPath();
+                    ctx.arc(hPt.x, hPt.y, 10, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.fillStyle = '#334155';
+                    ctx.fillText('H', hPt.x, hPt.y + 0.5);
+                }
+            }
+
             // 頂点（原子・官能基バッジ）の描画
             for (const a of chemGraph.atoms) {
                 const isHover = dragState.hoverAtom === a;
                 const deg = getConnectedBonds(a.id).length;
-                const shouldShowBadge = showAllCarbons || a.el !== 'C' || deg <= 1;
+                // 骨格構造式(skeletal)モード時は、末端(CH₃)も含めて炭素(C)のバッジをすべて非表示にして純粋な折れ線にする（単一原子メタンを除く）
+                const shouldShowBadge = (structureDisplayMode !== 'skeletal') || a.el !== 'C' || deg === 0;
 
                 if (shouldShowBadge) {
-                    const info = getAtomDisplayInfo(a);
+                    const info = getAtomDisplayInfo(a, structureDisplayMode);
                     ctx.font = 'bold 14px sans-serif';
                     const textW = ctx.measureText(info.label).width;
                     const rx = Math.max(15, textW / 2 + 6);
@@ -1439,17 +1526,13 @@
                     ctx.textBaseline = 'middle';
                     ctx.fillText(info.label, a.x, a.y + 0.5);
                 } else {
-                    // 骨格モード時の炭素頂点
+                    // 骨格構造式モード時はタブ1と同じくCH₃等のバッジを隠して純粋な折れ線にし、ホバー時のみタップ位置を表示
                     if (isHover) {
                         ctx.fillStyle = currentTool === 'eraser' ? 'rgba(239, 68, 68, 0.25)' : 'rgba(16, 185, 129, 0.28)';
                         ctx.beginPath();
                         ctx.arc(a.x, a.y, 14, 0, Math.PI * 2);
                         ctx.fill();
                     }
-                    ctx.fillStyle = '#334155';
-                    ctx.beginPath();
-                    ctx.arc(a.x, a.y, 4, 0, Math.PI * 2);
-                    ctx.fill();
                 }
             }
         }
@@ -1776,24 +1859,21 @@
         //   ・condensed: 炭素骨格と官能基の結合を表示し、水素は CH₃ / CH₂ / OH として表示
         //   ・skeletal:  骨格構造式（折れ線式）
         // =====================================================
-        let structureDisplayMode = 'full'; // 'full' | 'condensed' | 'skeletal'
-        let lastDrawnSmiles = "";
-
         function setStructureDisplayMode(mode) {
             structureDisplayMode = mode;
             const modes = ['full', 'condensed', 'skeletal'];
             modes.forEach(m => {
-                const btn = document.getElementById('btn-struct-mode-' + m);
-                if (!btn) return;
-                if (m === mode) {
-                    btn.className = "text-xs bg-blue-600 text-white border border-blue-700 px-3 py-1.5 rounded-lg font-bold shadow-sm transition";
-                } else {
-                    btn.className = "text-xs bg-slate-100 hover:bg-blue-50 text-slate-700 border border-slate-300 px-3 py-1.5 rounded-lg font-medium transition";
-                }
+                const btn1 = document.getElementById('btn-struct-mode-' + m);
+                const btn2 = document.getElementById('btn-draw-mode-' + m);
+                const activeClass = "text-xs bg-blue-600 text-white border border-blue-700 px-3 py-1.5 rounded-lg font-bold shadow-sm transition";
+                const inactiveClass = "text-xs bg-white hover:bg-blue-50 text-slate-700 border border-slate-300 px-3 py-1.5 rounded-lg font-medium transition";
+                if (btn1) btn1.className = (m === mode) ? activeClass : inactiveClass;
+                if (btn2) btn2.className = (m === mode) ? activeClass : inactiveClass;
             });
             if (lastDrawnSmiles) {
                 drawStructureOnCanvas(lastDrawnSmiles, document.getElementById('name-error-message'));
             }
+            renderChemCanvas();
         }
 
         // SMILES文字列を解析して原子・結合グラフに変換するパーサー
@@ -2204,10 +2284,10 @@
                     if (leftFirstSign !== 0 && rightFirstSign !== 0) {
                         if (leftFirstSign === rightFirstSign) {
                             leftTopSign = -1;
-                            rightTopSign = -1; // シス型
+                            rightTopSign = -1; // シス型（両方上向き）
                         } else {
-                            leftTopSign = -1;
-                            rightTopSign = 1;  // トランス型
+                            leftTopSign = 1;
+                            rightTopSign = -1; // トランス型（左下・右上：タブ2のお絵かきキャンバスと向きを統一）
                         }
                     }
 
@@ -2247,9 +2327,10 @@
                             queue.push(v.id);
                         });
                     }
-                } else if (mode === 'skeletal') {
+                } else if (mode === 'skeletal' || mode === 'condensed') {
                     // ---------------------------------------------------------
-                    // 骨格構造式（折れ線式）モード：ジグザグ120°配置
+                    // 簡略構造式（condensed）＆ 骨格構造式（skeletal）モード：
+                    // タブ2のお絵かきキャンバスと完全に同じジグザグ120°配置に統一！
                     // ---------------------------------------------------------
                     const spine = findMainChainPath(atoms, bonds);
                     const spineSet = new Set(spine);
@@ -2522,21 +2603,21 @@
 
             // 2. 原子記号（C, H, O, N, Cl 等）の描画
             const subDigits = {'2':'₂','3':'₃','4':'₄'};
-            const colorMap = {
-                'C':  '#0f172a',
-                'H':  '#334155',
-                'O':  '#dc2626',
-                'N':  '#2563eb',
-                'Cl': '#059669',
-                'Br': '#92400e',
-                'S':  '#b45309',
-                'F':  '#0d9488',
-                'I':  '#7c3aed'
+            const badgeStyleMap = {
+                'C':  { color: '#1e293b', bg: '#f8fafc', border: '#cbd5e1' },
+                'H':  { color: '#334155', bg: '#ffffff', border: 'transparent' },
+                'O':  { color: '#dc2626', bg: '#fef2f2', border: '#fecaca' },
+                'N':  { color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' },
+                'Cl': { color: '#059669', bg: '#ecfdf5', border: '#a7f3d0' },
+                'Br': { color: '#92400e', bg: '#fffbeb', border: '#fde68a' },
+                'S':  { color: '#b45309', bg: '#fffbeb', border: '#fde68a' },
+                'F':  { color: '#0d9488', bg: '#f0fdfa', border: '#99f6e4' },
+                'I':  { color: '#7c3aed', bg: '#f5f3ff', border: '#ddd6fe' }
             };
 
             for (const a of renderAtoms) {
-                // 骨格構造式（skeletal）モード時は、炭素(C)の記号を省略して折れ線の頂点のみにする
-                if (mode === 'skeletal' && a.el === 'C') {
+                // 骨格構造式（skeletal）モード時は、炭素(C)の記号を省略して折れ線の頂点のみにする（メタン1原子のみの場合を除く）
+                if (mode === 'skeletal' && a.el === 'C' && renderAtoms.length > 1) {
                     continue;
                 }
 
@@ -2549,27 +2630,54 @@
                     label = `${a.el}H${hSub}`;
                 }
 
-                const fontSize = Math.round(Math.max(13, (a.isExplicitH ? 16 : 18) * scale));
-                ctx.font = `bold ${fontSize}px 'Inter', sans-serif`;
-                const textMetrics = ctx.measureText(label);
-                const bgRx = Math.max(fontSize * 0.62, textMetrics.width / 2 + 5 * scale);
-                const bgRy = fontSize * 0.62;
+                const st = badgeStyleMap[a.el] || badgeStyleMap['C'];
 
-                // 結合線が文字を貫通しないよう白い背景でマスクする
-                ctx.fillStyle = '#ffffff';
-                ctx.beginPath();
-                if (ctx.roundRect) {
-                    ctx.roundRect(sp.x - bgRx, sp.y - bgRy, bgRx * 2, bgRy * 2, bgRy);
+                if (mode === 'condensed') {
+                    // タブ2の「📗 簡略構造式」と完全に同じ角丸バッジデザインで描画
+                    const fontSize = Math.round(Math.max(13, 15 * scale));
+                    ctx.font = `bold ${fontSize}px 'Inter', sans-serif`;
+                    const textW = ctx.measureText(label).width;
+                    const rx = Math.max(15 * scale, textW / 2 + 6 * scale);
+                    const ry = 14 * scale;
+
+                    ctx.fillStyle = st.bg;
+                    ctx.strokeStyle = st.border;
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    if (ctx.roundRect) {
+                        ctx.roundRect(sp.x - rx, sp.y - ry, rx * 2, ry * 2, 9 * scale);
+                    } else {
+                        ctx.arc(sp.x, sp.y, rx, 0, Math.PI * 2);
+                    }
+                    ctx.fill();
+                    ctx.stroke();
+
+                    ctx.fillStyle = st.color;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(label, sp.x, sp.y + 0.5);
                 } else {
-                    ctx.arc(sp.x, sp.y, bgRx, 0, Math.PI * 2);
-                }
-                ctx.fill();
+                    // 📘 構造式（full）および 📙 骨格構造式（skeletal）のヘテロ原子描画
+                    const fontSize = Math.round(Math.max(13, (a.isExplicitH ? 16 : 18) * scale));
+                    ctx.font = `bold ${fontSize}px 'Inter', sans-serif`;
+                    const textMetrics = ctx.measureText(label);
+                    const bgRx = Math.max(fontSize * 0.62, textMetrics.width / 2 + 5 * scale);
+                    const bgRy = fontSize * 0.62;
 
-                // 元素文字の描画
-                ctx.fillStyle = colorMap[a.el] || '#0f172a';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText(label, sp.x, sp.y + 1);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.beginPath();
+                    if (ctx.roundRect) {
+                        ctx.roundRect(sp.x - bgRx, sp.y - bgRy, bgRx * 2, bgRy * 2, bgRy);
+                    } else {
+                        ctx.arc(sp.x, sp.y, bgRx, 0, Math.PI * 2);
+                    }
+                    ctx.fill();
+
+                    ctx.fillStyle = st.color;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(label, sp.x, sp.y + 1);
+                }
             }
         }
 
@@ -2591,7 +2699,7 @@
         // ページ読み込み時の初期化処理
         window.addEventListener('DOMContentLoaded', () => {
             initChemCanvasEvents();
-            renderChemCanvas();
+            setStructureDisplayMode('full');
         });
 
         // =====================================================
