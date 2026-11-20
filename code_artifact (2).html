@@ -1,0 +1,1939 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>有機化合物 命名・構造式ビューア</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Inter & Noto Sans JP -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Inter"', '"Noto Sans JP"', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    /* スムーズなSVGトランジションとカスタムスクロールバー */
+    .chem-svg {
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans min-h-screen antialiased">
+
+  <!-- 通知用トースト（alert不使用） -->
+  <div id="toast" class="fixed bottom-5 right-5 z-50 hidden transform transition-all duration-300 translate-y-2 opacity-0">
+    <div id="toast-inner" class="flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg text-sm font-medium bg-slate-900 text-white">
+      <span id="toast-message"></span>
+    </div>
+  </div>
+
+  <!-- メインコンテナ -->
+  <div class="max-w-5xl mx-auto px-3 sm:px-6 py-5 sm:py-8 space-y-5">
+
+    <!-- ヘッダー & 検索バー -->
+    <header class="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-4 sm:p-5 space-y-4">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-sm shrink-0">
+            <!-- 六角形（ベンゼン環）アイコン -->
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="12 2 20.66 7 20.66 17 12 22 3.34 17 3.34 7 12 2"></polygon>
+              <circle cx="12" cy="12" r="4.5"></circle>
+            </svg>
+          </div>
+          <div>
+            <h1 class="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">有機化合物 命名・構造式ビューア</h1>
+            <p class="text-xs text-slate-500">化合物名（日本語・英語・IUPAC名）または SMILES を入力して構造式を表示</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 検索フォーム -->
+      <form id="search-form" class="flex flex-col sm:flex-row gap-2.5">
+        <div class="relative flex-1">
+          <input
+            id="search-input"
+            type="text"
+            placeholder="例: 1-ブテン, エタノール, 酢酸, ベンゼン, ethanol, CCC=C ..."
+            class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 bg-slate-50/50 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none text-sm transition"
+            autocomplete="off"
+          />
+          <svg class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+        </div>
+        <button
+          id="search-btn"
+          type="submit"
+          class="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold text-sm shadow-sm transition flex items-center justify-center gap-2 shrink-0 cursor-pointer"
+        >
+          <span id="search-btn-text">表示・検索</span>
+          <svg id="search-spinner" class="hidden w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+          </svg>
+        </button>
+      </form>
+    </header>
+
+    <!-- 化合物情報ヘッダーカード（スクリーンショットのレイアウトを忠実に再現） -->
+    <section class="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5 sm:p-6">
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-5 sm:gap-6 items-start">
+        <!-- 名称 -->
+        <div>
+          <div class="text-xs font-medium text-slate-400 mb-1">名称 (Title)</div>
+          <div id="info-title" class="text-xl sm:text-2xl font-bold text-slate-900 leading-snug">
+            1-ブテン (1-Butene)
+          </div>
+          <div id="info-category" class="mt-1.5 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
+            アルケン
+          </div>
+        </div>
+
+        <!-- 分子式 -->
+        <div>
+          <div class="text-xs font-medium text-slate-400 mb-1">分子式 (Formula)</div>
+          <div id="info-formula" class="text-2xl sm:text-3xl font-bold text-blue-600 tracking-wide">
+            C<sub>4</sub>H<sub>8</sub>
+          </div>
+        </div>
+
+        <!-- IUPAC名 -->
+        <div>
+          <div class="text-xs font-medium text-slate-400 mb-1">IUPAC名 (組織名)</div>
+          <div id="info-iupac" class="text-base sm:text-lg font-semibold text-slate-800 break-words">
+            but-1-ene
+          </div>
+          <div id="info-iupac-jp-wrap" class="mt-1 flex items-center gap-1.5">
+            <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-200">JP</span>
+            <span id="info-iupac-jp" class="text-sm font-bold text-blue-600">ブタ-1-エン</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 構造式ビューアカード -->
+    <section class="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+      <!-- 表示スタイル切り替えバー -->
+      <div class="p-4 sm:p-5 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+        <div class="flex flex-col sm:flex-row sm:items-start gap-2.5 sm:gap-3 flex-1">
+          <div class="flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-slate-600 pt-1.5 shrink-0">
+            <svg class="w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M2 20h20L2 4v16z"></path>
+            </svg>
+            <span>表示スタイルの切り替え：</span>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <!-- ボタン1: 構造式 -->
+            <button
+              type="button"
+              data-mode="full"
+              class="mode-btn px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold border transition flex items-center gap-2 cursor-pointer"
+            >
+              <span class="w-3 h-3 rounded-sm bg-sky-400 inline-block shrink-0"></span>
+              <span>構造式（C・H・結合線をすべて表示）</span>
+            </button>
+            <!-- ボタン2: 簡略構造式 -->
+            <button
+              type="button"
+              data-mode="condensed"
+              class="mode-btn px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold border transition flex items-center gap-2 cursor-pointer"
+            >
+              <span class="w-3 h-3 rounded-sm bg-emerald-400 inline-block shrink-0"></span>
+              <span>簡略構造式（CH₃・OH等で表示）</span>
+            </button>
+            <!-- ボタン3: 骨格構造式 -->
+            <button
+              type="button"
+              data-mode="skeletal"
+              class="mode-btn px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold border transition flex items-center gap-2 cursor-pointer"
+            >
+              <span class="w-3 h-3 rounded-sm bg-rose-500 inline-block shrink-0"></span>
+              <span>骨格構造式（折れ線式）</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 補助コントロール（炭素番号・画像保存） -->
+        <div class="flex items-center gap-2 shrink-0 self-end lg:self-center">
+          <button
+            id="toggle-numbers-btn"
+            type="button"
+            class="px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-200 text-slate-600 hover:bg-slate-50 transition cursor-pointer"
+            title="炭素原子の位置番号を表示/非表示"
+          >
+            # 炭素番号
+          </button>
+          <button
+            id="download-svg-btn"
+            type="button"
+            class="px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-200 text-slate-600 hover:bg-slate-50 transition cursor-pointer"
+            title="構造式をSVG画像として保存"
+          >
+            SVG保存
+          </button>
+        </div>
+      </div>
+
+      <!-- SVG 描画キャンバス領域 -->
+      <div class="relative bg-white w-full min-h-[340px] sm:min-h-[420px] flex items-center justify-center p-4 sm:p-8">
+        <div id="svg-container" class="w-full h-full flex items-center justify-center">
+          <!-- JavaScriptによって高品質なSVGがここに描画されます -->
+        </div>
+
+        <!-- 座標ソースの控えめなバッジ -->
+        <div id="coord-source-badge" class="absolute bottom-3 right-4 text-[11px] text-slate-400 select-none">
+          精密ジグザグ・環状レイアウトエンジン
+        </div>
+      </div>
+    </section>
+
+    <!-- フッターバー（SMILES & PubChemリンク） -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-1">
+      <div class="flex items-center gap-2">
+        <button
+          id="copy-smiles-btn"
+          type="button"
+          class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-200/70 hover:bg-slate-200 text-slate-700 text-xs font-mono transition cursor-pointer"
+          title="クリックしてSMILESをコピー"
+        >
+          <span>SMILES: <strong id="info-smiles" class="font-semibold text-slate-900">CCC=C</strong></span>
+          <svg class="w-3.5 h-3.5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+          </svg>
+        </button>
+      </div>
+
+      <a
+        id="pubchem-link"
+        href="https://pubchem.ncbi.nlm.nih.gov/compound/7844"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline transition"
+      >
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+        </svg>
+        <span>PubChemで詳細・3Dモデルを見る ↗</span>
+      </a>
+    </div>
+
+    <!-- クイック選択プリセット（高校化学・工業化学の代表的な有機化合物） -->
+    <section class="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-4 sm:p-5 space-y-3">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <h2 class="text-sm font-bold text-slate-700">代表的な有機化合物（タップで即表示）</h2>
+        <div id="category-tabs" class="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 sm:pb-0">
+          <!-- JSで生成 -->
+        </div>
+      </div>
+      <div id="preset-grid" class="flex flex-wrap gap-2">
+        <!-- JSで生成 -->
+      </div>
+    </section>
+
+  </div>
+
+  <script>
+    /**
+     * ============================================================================
+     * 1. 内蔵化合物データベース（高校化学・工業化学の基本〜発展まで網羅）
+     * ============================================================================
+     */
+    const PRESET_COMPOUNDS = [
+      // 炭化水素（アルカン・アルケン・アルキン・シクロアルカン）
+      { name: 'メタン', enName: 'Methane', iupac: 'methane', iupacJp: 'メタン', formula: 'CH4', smiles: 'C', category: '炭化水素', cid: 297 },
+      { name: 'エタン', enName: 'Ethane', iupac: 'ethane', iupacJp: 'エタン', formula: 'C2H6', smiles: 'CC', category: '炭化水素', cid: 6324 },
+      { name: 'プロパン', enName: 'Propane', iupac: 'propane', iupacJp: 'プロパン', formula: 'C3H8', smiles: 'CCC', category: '炭化水素', cid: 6334 },
+      { name: 'ブタン', enName: 'Butane', iupac: 'butane', iupacJp: 'ブタン', formula: 'C4H10', smiles: 'CCCC', category: '炭化水素', cid: 7843 },
+      { name: '2-メチルプロパン', enName: 'Isobutane', iupac: '2-methylpropane', iupacJp: '2-メチルプロパン', formula: 'C4H10', smiles: 'CC(C)C', category: '炭化水素', cid: 6360 },
+      { name: 'ペンタン', enName: 'Pentane', iupac: 'pentane', iupacJp: 'ペンタン', formula: 'C5H12', smiles: 'CCCCC', category: '炭化水素', cid: 8003 },
+      { name: '2,2-ジメチルプロパン', enName: 'Neopentane', iupac: '2,2-dimethylpropane', iupacJp: '2,2-ジメチルプロパン', formula: 'C5H12', smiles: 'CC(C)(C)C', category: '炭化水素', cid: 10041 },
+      { name: 'エチレン', enName: 'Ethylene', iupac: 'ethene', iupacJp: 'エテン', formula: 'C2H4', smiles: 'C=C', category: '炭化水素', cid: 6325 },
+      { name: 'プロペン', enName: 'Propene', iupac: 'prop-1-ene', iupacJp: 'プロペン', formula: 'C3H6', smiles: 'CC=C', category: '炭化水素', cid: 8252 },
+      { name: '1-ブテン', enName: '1-Butene', iupac: 'but-1-ene', iupacJp: 'ブタ-1-エン', formula: 'C4H8', smiles: 'CCC=C', category: '炭化水素', cid: 7844 },
+      { name: '2-ブテン', enName: '2-Butene', iupac: 'but-2-ene', iupacJp: 'ブタ-2-エン', formula: 'C4H8', smiles: 'CC=CC', category: '炭化水素', cid: 62695 },
+      { name: '2-メチルプロペン', enName: 'Isobutylene', iupac: '2-methylprop-1-ene', iupacJp: '2-メチルプロペン', formula: 'C4H8', smiles: 'CC(=C)C', category: '炭化水素', cid: 8255 },
+      { name: '1,3-ブタジエン', enName: '1,3-Butadiene', iupac: 'buta-1,3-diene', iupacJp: 'ブタ-1,3-ジエン', formula: 'C4H6', smiles: 'C=CC=C', category: '炭化水素', cid: 7845 },
+      { name: 'アセチレン', enName: 'Acetylene', iupac: 'ethyne', iupacJp: 'エチン', formula: 'C2H2', smiles: 'C#C', category: '炭化水素', cid: 6326 },
+      { name: '1-ブチン', enName: '1-Butyne', iupac: 'but-1-yne', iupacJp: 'ブタ-1-イン', formula: 'C4H6', smiles: 'CCC#C', category: '炭化水素', cid: 7846 },
+      { name: 'シクロペンタン', enName: 'Cyclopentane', iupac: 'cyclopentane', iupacJp: 'シクロペンタン', formula: 'C5H10', smiles: 'C1CCCC1', category: '炭化水素', cid: 9253 },
+      { name: 'シクロヘキサン', enName: 'Cyclohexane', iupac: 'cyclohexane', iupacJp: 'シクロヘキサン', formula: 'C6H12', smiles: 'C1CCCCC1', category: '炭化水素', cid: 8078 },
+      { name: 'シクロヘキセン', enName: 'Cyclohexene', iupac: 'cyclohexene', iupacJp: 'シクロヘキセン', formula: 'C6H10', smiles: 'C1=CCCCC1', category: '炭化水素', cid: 8079 },
+
+      // アルコール・エーテル
+      { name: 'メタノール', enName: 'Methanol', iupac: 'methanol', iupacJp: 'メタノール', formula: 'CH4O', smiles: 'CO', category: 'アルコール・エーテル', cid: 887 },
+      { name: 'エタノール', enName: 'Ethanol', iupac: 'ethanol', iupacJp: 'エタノール', formula: 'C2H6O', smiles: 'CCO', category: 'アルコール・エーテル', cid: 702 },
+      { name: '1-プロパノール', enName: '1-Propanol', iupac: 'propan-1-ol', iupacJp: 'プロパン-1-オール', formula: 'C3H8O', smiles: 'CCCO', category: 'アルコール・エーテル', cid: 1031 },
+      { name: '2-プロパノール', enName: 'Isopropanol', iupac: 'propan-2-ol', iupacJp: 'プロパン-2-オール', formula: 'C3H8O', smiles: 'CC(O)C', category: 'アルコール・エーテル', cid: 3776 },
+      { name: '1-ブタノール', enName: '1-Butanol', iupac: 'butan-1-ol', iupacJp: 'ブタン-1-オール', formula: 'C4H10O', smiles: 'CCCCO', category: 'アルコール・エーテル', cid: 263 },
+      { name: 'エチレングリコール', enName: 'Ethylene glycol', iupac: 'ethane-1,2-diol', iupacJp: 'エタン-1,2-ジオール', formula: 'C2H6O2', smiles: 'OCCO', category: 'アルコール・エーテル', cid: 174 },
+      { name: 'グリセリン', enName: 'Glycerol', iupac: 'propane-1,2,3-triol', iupacJp: 'プロパン-1,2,3-トリオール', formula: 'C3H8O3', smiles: 'OCC(O)CO', category: 'アルコール・エーテル', cid: 753 },
+      { name: 'ジメチルエーテル', enName: 'Dimethyl ether', iupac: 'methoxymethane', iupacJp: 'メトキシメタン', formula: 'C2H6O', smiles: 'COC', category: 'アルコール・エーテル', cid: 8254 },
+      { name: 'ジエチルエーテル', enName: 'Diethyl ether', iupac: 'ethoxyethane', iupacJp: 'エトキシエタン', formula: 'C4H10O', smiles: 'CCOCC', category: 'アルコール・エーテル', cid: 3283 },
+
+      // アルデヒド・ケトン
+      { name: 'ホルムアルデヒド', enName: 'Formaldehyde', iupac: 'methanal', iupacJp: 'メタナール', formula: 'CH2O', smiles: 'C=O', category: 'アルデヒド・ケトン', cid: 712 },
+      { name: 'アセトアルデヒド', enName: 'Acetaldehyde', iupac: 'ethanal', iupacJp: 'エタナール', formula: 'C2H4O', smiles: 'CC=O', category: 'アルデヒド・ケトン', cid: 177 },
+      { name: 'アセトン', enName: 'Acetone', iupac: 'propan-2-one', iupacJp: 'プロパン-2-オン', formula: 'C3H6O', smiles: 'CC(=O)C', category: 'アルデヒド・ケトン', cid: 180 },
+      { name: 'エチルメチルケトン', enName: 'Butanone', iupac: 'butan-2-one', iupacJp: 'ブタン-2-オン', formula: 'C4H8O', smiles: 'CCC(=O)C', category: 'アルデヒド・ケトン', cid: 6569 },
+
+      // カルボン酸・エステル
+      { name: 'ギ酸', enName: 'Formic acid', iupac: 'formic acid', iupacJp: 'メタン酸', formula: 'CH2O2', smiles: 'OC=O', category: 'カルボン酸・エステル', cid: 284 },
+      { name: '酢酸', enName: 'Acetic acid', iupac: 'acetic acid', iupacJp: 'エタン酸', formula: 'C2H4O2', smiles: 'CC(=O)O', category: 'カルボン酸・エステル', cid: 176 },
+      { name: 'プロピオン酸', enName: 'Propionic acid', iupac: 'propanoic acid', iupacJp: 'プロパン酸', formula: 'C3H6O2', smiles: 'CCC(=O)O', category: 'カルボン酸・エステル', cid: 1032 },
+      { name: 'シュウ酸', enName: 'Oxalic acid', iupac: 'oxalic acid', iupacJp: 'エタン二酸', formula: 'C2H2O4', smiles: 'OC(=O)C(=O)O', category: 'カルボン酸・エステル', cid: 971 },
+      { name: '酢酸エチル', enName: 'Ethyl acetate', iupac: 'ethyl acetate', iupacJp: 'エタン酸エチル', formula: 'C4H8O2', smiles: 'CCOC(=O)C', category: 'カルボン酸・エステル', cid: 8857 },
+      { name: 'ギ酸メチル', enName: 'Methyl formate', iupac: 'methyl formate', iupacJp: 'メタン酸メチル', formula: 'C2H4O2', smiles: 'COC=O', category: 'カルボン酸・エステル', cid: 7865 },
+
+      // 芳香族化合物
+      { name: 'ベンゼン', enName: 'Benzene', iupac: 'benzene', iupacJp: 'ベンゼン', formula: 'C6H6', smiles: 'c1ccccc1', category: '芳香族', cid: 241 },
+      { name: 'トルエン', enName: 'Toluene', iupac: 'methylbenzene', iupacJp: 'メチルベンゼン', formula: 'C7H8', smiles: 'Cc1ccccc1', category: '芳香族', cid: 1140 },
+      { name: 'フェノール', enName: 'Phenol', iupac: 'phenol', iupacJp: 'フェノール', formula: 'C6H6O', smiles: 'Oc1ccccc1', category: '芳香族', cid: 996 },
+      { name: 'アニリン', enName: 'Aniline', iupac: 'aniline', iupacJp: 'アニリン', formula: 'C6H7N', smiles: 'Nc1ccccc1', category: '芳香族', cid: 6115 },
+      { name: '安息香酸', enName: 'Benzoic acid', iupac: 'benzoic acid', iupacJp: '安息香酸', formula: 'C7H6O2', smiles: 'O=C(O)c1ccccc1', category: '芳香族', cid: 243 },
+      { name: 'サリチル酸', enName: 'Salicylic acid', iupac: '2-hydroxybenzoic acid', iupacJp: '2-ヒドロキシ安息香酸', formula: 'C7H6O3', smiles: 'O=C(O)c1ccccc1O', category: '芳香族', cid: 338 },
+      { name: 'アスピリン', enName: 'Aspirin', iupac: '2-acetoxybenzoic acid', iupacJp: 'アセチルサリチル酸', formula: 'C9H8O4', smiles: 'CC(=O)Oc1ccccc1C(=O)O', category: '芳香族', cid: 2244 },
+      { name: 'o-キシレン', enName: 'o-Xylene', iupac: '1,2-dimethylbenzene', iupacJp: '1,2-ジメチルベンゼン', formula: 'C8H10', smiles: 'Cc1ccccc1C', category: '芳香族', cid: 7237 },
+      { name: 'ナフタレン', enName: 'Naphthalene', iupac: 'naphthalene', iupacJp: 'ナフタレン', formula: 'C10H8', smiles: 'c1ccc2ccccc2c1', category: '芳香族', cid: 931 },
+
+      // その他（ハロゲン化物・アミン・ニトリル等）
+      { name: 'クロロメタン', enName: 'Chloromethane', iupac: 'chloromethane', iupacJp: 'クロロメタン', formula: 'CH3Cl', smiles: 'CCl', category: 'その他', cid: 6327 },
+      { name: 'クロロホルム', enName: 'Chloroform', iupac: 'trichloromethane', iupacJp: 'トリクロロメタン', formula: 'CHCl3', smiles: 'ClC(Cl)Cl', category: 'その他', cid: 6212 },
+      { name: '塩化ビニル', enName: 'Vinyl chloride', iupac: 'chloroethene', iupacJp: 'クロロエテン', formula: 'C2H3Cl', smiles: 'C=CCl', category: 'その他', cid: 6338 },
+      { name: 'アクリロニトリル', enName: 'Acrylonitrile', iupac: 'prop-2-enenitrile', iupacJp: 'プロパ-2-エンニトリル', formula: 'C3H3N', smiles: 'C=CC#N', category: 'その他', cid: 7855 },
+      { name: '尿素', enName: 'Urea', iupac: 'urea', iupacJp: 'カルバミド（尿素）', formula: 'CH4N2O', smiles: 'NC(=O)N', category: 'その他', cid: 1176 },
+    ];
+
+    /**
+     * ============================================================================
+     * 2. 元素データ & ユーティリティ
+     * ============================================================================
+     */
+    const ATOMIC_NUMBER_TO_SYMBOL = {
+      1: 'H', 5: 'B', 6: 'C', 7: 'N', 8: 'O', 9: 'F',
+      14: 'Si', 15: 'P', 16: 'S', 17: 'Cl', 35: 'Br', 53: 'I'
+    };
+
+    const ELEMENT_COLORS = {
+      C: '#0f172a',
+      H: '#475569',
+      O: '#dc2626',
+      N: '#2563eb',
+      Cl: '#16a34a',
+      F: '#16a34a',
+      Br: '#9a3412',
+      I: '#7e22ce',
+      S: '#ca8a04',
+      P: '#ea580c',
+      B: '#d97706',
+      Si: '#64748b'
+    };
+
+    const STANDARD_VALENCE = {
+      B: 3, C: 4, N: 3, O: 2, F: 1, Si: 4, P: 3, S: 2, Cl: 1, Br: 1, I: 1, H: 1
+    };
+
+    // 分子式をHTMLの下付き文字に変換（例: C4H8 -> C<sub>4</sub>H<sub>8</sub>）
+    function formatFormulaHTML(formula) {
+      if (!formula) return '—';
+      return formula.replace(/(\d+)/g, '<sub>$1</sub>');
+    }
+
+    // グラフから分子式を自動計算（ヒルシステム: C, H, その他アルファベット順）
+    function computeFormulaFromGraph(graph) {
+      const counts = {};
+      for (const atom of graph.atoms) {
+        counts[atom.el] = (counts[atom.el] || 0) + 1;
+        if (atom.hCount > 0) {
+          counts['H'] = (counts['H'] || 0) + atom.hCount;
+        }
+      }
+      let out = '';
+      if (counts['C']) {
+        out += 'C' + (counts['C'] > 1 ? counts['C'] : '');
+        delete counts['C'];
+        if (counts['H']) {
+          out += 'H' + (counts['H'] > 1 ? counts['H'] : '');
+          delete counts['H'];
+        }
+      }
+      for (const el of Object.keys(counts).sort()) {
+        out += el + (counts[el] > 1 ? counts[el] : '');
+      }
+      return out || '—';
+    }
+
+    // 英語IUPAC名を簡易日本語カタカナ表記へ変換
+    function translateIupacToJp(iupac) {
+      if (!iupac) return '';
+      let s = iupac.toLowerCase();
+      const map = [
+        ['oic acid', '酸'], ['acetic acid', '酢酸'], ['formic acid', 'ギ酸'],
+        ['benzoic acid', '安息香酸'], ['benzene', 'ベンゼン'],
+        ['cyclo', 'シクロ'], ['methyl', 'メチル'], ['ethyl', 'エチル'], ['propyl', 'プロピル'],
+        ['butyl', 'ブチル'], ['hydroxy', 'ヒドロキシ'], ['amino', 'アミノ'],
+        ['chloro', 'クロロ'], ['bromo', 'ブロモ'], ['fluoro', 'フルオロ'], ['nitro', 'ニトロ'],
+        ['methoxy', 'メトキシ'], ['ethoxy', 'エトキシ'],
+        ['di', 'ジ'], ['tri', 'トリ'], ['tetra', 'テトラ'],
+        ['methane', 'メタン'], ['ethane', 'エタン'], ['propane', 'プロパン'],
+        ['butane', 'ブタン'], ['pentane', 'ペンタン'], ['hexane', 'ヘキサン'],
+        ['heptane', 'ヘプタン'], ['octane', 'オクタン'], ['nonane', 'ノナン'], ['decane', 'デカン'],
+        ['meth', 'メタ'], ['eth', 'エタ'], ['prop', 'プロパ'], ['but', 'ブタ'],
+        ['pent', 'ペンタ'], ['hex', 'ヘキサ'], ['hept', 'ヘプタ'], ['oct', 'オクタ'],
+        ['non', 'ノナ'], ['dec', 'デカ'],
+        ['ene', 'エン'], ['yne', 'イン'], ['ol', 'オール'], ['al', 'アール'],
+        ['one', 'オン'], ['ane', 'アン'], ['nitrile', 'ニトリル']
+      ];
+      for (const [en, jp] of map) {
+        s = s.split(en).join(jp);
+      }
+      return s;
+    }
+
+    // 日本語系統名（例: 2-メチルペンタン, 1-ヘキセン）を英語検索語に変換
+    function translateJpNameToEn(jp) {
+      let s = jp.trim();
+      const map = [
+        ['シクロ', 'cyclo'], ['ジメチル', 'dimethyl'], ['トリメチル', 'trimethyl'],
+        ['メチル', 'methyl'], ['エチル', 'ethyl'], ['プロピル', 'propyl'],
+        ['クロロ', 'chloro'], ['ブロモ', 'bromo'], ['ヒドロキシ', 'hydroxy'],
+        ['アミノ', 'amino'], ['ニトロ', 'nitro'],
+        ['メタン', 'methane'], ['エタン', 'ethane'], ['プロパン', 'propane'],
+        ['ブタン', 'butane'], ['ペンタン', 'pentane'], ['ヘキサン', 'hexane'],
+        ['ヘプタン', 'heptane'], ['オクタン', 'octane'], ['ノナン', 'nonane'], ['デカン', 'decane'],
+        ['エテン', 'ethene'], ['プロペン', 'propene'], ['ブテン', 'butene'],
+        ['ペンテン', 'pentene'], ['ヘキセン', 'hexene'], ['ヘプテン', 'heptene'], ['オクテン', 'octene'],
+        ['エチン', 'ethyne'], ['プロピン', 'propyne'], ['ブチン', 'butyne'],
+        ['ペンチン', 'pentyne'], ['ヘキシン', 'hexyne'],
+        ['メタノール', 'methanol'], ['エタノール', 'ethanol'], ['プロパノール', 'propanol'],
+        ['ブタノール', 'butanol'], ['ペンタノール', 'pentanol'], ['ヘキサノール', 'hexanol'],
+        ['ベンゼン', 'benzene'], ['フェノール', 'phenol'], ['トルエン', 'toluene'],
+        ['アニリン', 'aniline'], ['カフェイン', 'caffeine'], ['グルコース', 'glucose'],
+        ['ブタジエン', 'butadiene'], ['イソプレン', 'isoprene'], ['スチレン', 'styrene']
+      ];
+      for (const [k, v] of map) {
+        s = s.split(k).join(v);
+      }
+      return s;
+    }
+
+    /**
+     * ============================================================================
+     * 3. SMILESパーサー & 芳香族ケクレ化エンジン
+     * ============================================================================
+     */
+    function parseSMILES(smiles) {
+      const atoms = [];
+      const bonds = [];
+      const stack = [];
+      const ringOpens = {};
+
+      let currentAtom = null;
+      let pendingBondOrder = null;
+      let i = 0;
+
+      while (i < smiles.length) {
+        const ch = smiles[i];
+
+        if (ch === ' ' || ch === '\t') {
+          i++;
+          continue;
+        }
+
+        // 非連結成分
+        if (ch === '.') {
+          currentAtom = null;
+          pendingBondOrder = null;
+          i++;
+          continue;
+        }
+
+        // 分岐開始・終了
+        if (ch === '(') {
+          stack.push(currentAtom);
+          i++;
+          continue;
+        }
+        if (ch === ')') {
+          currentAtom = stack.pop();
+          pendingBondOrder = null;
+          i++;
+          continue;
+        }
+
+        // 結合記号
+        if (ch === '-' || ch === '/' || ch === '\\') {
+          pendingBondOrder = 1;
+          i++;
+          continue;
+        }
+        if (ch === '=') {
+          pendingBondOrder = 2;
+          i++;
+          continue;
+        }
+        if (ch === '#') {
+          pendingBondOrder = 3;
+          i++;
+          continue;
+        }
+        if (ch === ':') {
+          pendingBondOrder = 1.5;
+          i++;
+          continue;
+        }
+
+        // 環結合番号（1桁または %2桁）
+        if ((ch >= '0' && ch <= '9') || ch === '%') {
+          let ringKey = ch;
+          if (ch === '%') {
+            ringKey = smiles.slice(i + 1, i + 3);
+            i += 3;
+          } else {
+            i++;
+          }
+          if (ringOpens[ringKey] !== undefined) {
+            const openInfo = ringOpens[ringKey];
+            delete ringOpens[ringKey];
+            const a1 = openInfo.atomId;
+            const a2 = currentAtom;
+            let order = pendingBondOrder || openInfo.order;
+            if (!order) {
+              order = (atoms[a1].aromatic && atoms[a2].aromatic) ? 1.5 : 1;
+            }
+            bonds.push({ a1, a2, order });
+            pendingBondOrder = null;
+          } else {
+            ringOpens[ringKey] = { atomId: currentAtom, order: pendingBondOrder };
+            pendingBondOrder = null;
+          }
+          continue;
+        }
+
+        // 角括弧付き原子（例: [NH4+], [O-], [nH], [C@@H]）
+        if (ch === '[') {
+          const closeIdx = smiles.indexOf(']', i);
+          if (closeIdx === -1) throw new Error('SMILESの角括弧が閉じていません');
+          const content = smiles.slice(i + 1, closeIdx);
+          i = closeIdx + 1;
+
+          // 質量数スキップ -> 元素 -> キラリティ -> H数 -> 電荷
+          const match = content.match(/^(\d*)([A-Za-z][a-z]?)(@{1,2})?(H(\d*))?([+-]\d*|[+-]+)?$/);
+          if (!match) throw new Error('角括弧原子を解釈できません: [' + content + ']');
+          let elRaw = match[2];
+          const aromatic = elRaw === elRaw.toLowerCase();
+          const el = elRaw.charAt(0).toUpperCase() + elRaw.slice(1).toLowerCase();
+          let explicitH = 0;
+          if (match[4]) {
+            explicitH = match[5] ? parseInt(match[5], 10) : 1;
+          }
+          let charge = 0;
+          if (match[6]) {
+            const cStr = match[6];
+            if (cStr === '++') charge = 2;
+            else if (cStr === '--') charge = -2;
+            else if (cStr === '+') charge = 1;
+            else if (cStr === '-') charge = -1;
+            else charge = parseInt(cStr, 10) || 0;
+          }
+
+          const newId = atoms.length;
+          atoms.push({ id: newId, el, aromatic, explicitH, charge, hCount: 0, x: 0, y: 0 });
+          if (currentAtom !== null) {
+            const order = pendingBondOrder || ((atoms[currentAtom].aromatic && aromatic) ? 1.5 : 1);
+            bonds.push({ a1: currentAtom, a2: newId, order });
+          }
+          currentAtom = newId;
+          pendingBondOrder = null;
+          continue;
+        }
+
+        // 通常原子（2文字元素 Cl, Br, Si を優先）
+        let elRaw = '';
+        if (i + 1 < smiles.length) {
+          const two = smiles.slice(i, i + 2);
+          if (two === 'Cl' || two === 'Br' || two === 'Si') {
+            elRaw = two;
+            i += 2;
+          }
+        }
+        if (!elRaw) {
+          if (/[BCNOPSFIbcnops]/.test(ch)) {
+            elRaw = ch;
+            i++;
+          } else {
+            throw new Error('未知のSMILES文字です: ' + ch);
+          }
+        }
+
+        const aromatic = elRaw === elRaw.toLowerCase();
+        const el = elRaw.length === 2 ? elRaw : elRaw.toUpperCase();
+        const newId = atoms.length;
+        atoms.push({ id: newId, el, aromatic, explicitH: null, charge: 0, hCount: 0, x: 0, y: 0 });
+
+        if (currentAtom !== null) {
+          const order = pendingBondOrder || ((atoms[currentAtom].aromatic && aromatic) ? 1.5 : 1);
+          bonds.push({ a1: currentAtom, a2: newId, order });
+        }
+        currentAtom = newId;
+        pendingBondOrder = null;
+      }
+
+      if (atoms.length === 0) throw new Error('原子が見つかりません');
+
+      // 芳香族結合を交互の単結合・二重結合へケクレ化
+      kekulize(atoms, bonds);
+
+      // 各原子の暗黙の水素数 (hCount) を計算
+      computeImplicitHydrogens(atoms, bonds);
+
+      return { atoms, bonds };
+    }
+
+    /**
+     * 芳香族結合（order === 1.5）に最大マッチングで二重結合を割り当てる
+     */
+    function kekulize(atoms, bonds) {
+      const aromBonds = bonds.filter(b => b.order === 1.5);
+      if (aromBonds.length === 0) return;
+
+      // 芳香族原子のうち、二重結合を1つ必要とする頂点を抽出
+      const needDouble = new Set();
+      for (const a of atoms) {
+        if (!a.aromatic) continue;
+        // すでに明示的な二重結合を持つ場合（例: キノンやピリドン）はスキップ
+        const hasExpDouble = bonds.some(b => (b.a1 === a.id || b.a2 === a.id) && b.order === 2);
+        if (hasExpDouble) continue;
+        // ピロール [nH]、フラン o、チオフェン s は二重結合不要
+        if (a.el === 'O' || a.el === 'S') continue;
+        if (a.el === 'N' && a.explicitH && a.explicitH > 0) continue;
+        needDouble.add(a.id);
+      }
+
+      const adj = new Map();
+      for (const id of needDouble) adj.set(id, []);
+      for (const b of aromBonds) {
+        if (needDouble.has(b.a1) && needDouble.has(b.a2)) {
+          adj.get(b.a1).push(b);
+          adj.get(b.a2).push(b);
+        }
+      }
+
+      const nodes = Array.from(needDouble);
+      const matched = new Set();
+      const chosenBonds = new Set();
+
+      function backtrack(idx) {
+        while (idx < nodes.length && matched.has(nodes[idx])) idx++;
+        if (idx >= nodes.length) return true;
+        const u = nodes[idx];
+        for (const b of adj.get(u)) {
+          const v = b.a1 === u ? b.a2 : b.a1;
+          if (!matched.has(v)) {
+            matched.add(u);
+            matched.add(v);
+            chosenBonds.add(b);
+            if (backtrack(idx + 1)) return true;
+            chosenBonds.delete(b);
+            matched.delete(u);
+            matched.delete(v);
+          }
+        }
+        return false;
+      }
+
+      backtrack(0);
+      for (const b of aromBonds) {
+        b.order = chosenBonds.has(b) ? 2 : 1;
+      }
+    }
+
+    function computeImplicitHydrogens(atoms, bonds) {
+      for (const a of atoms) {
+        if (a.explicitH !== null && a.explicitH !== undefined) {
+          a.hCount = a.explicitH;
+          continue;
+        }
+        let bondSum = 0;
+        for (const b of bonds) {
+          if (b.a1 === a.id || b.a2 === a.id) bondSum += Math.round(b.order);
+        }
+        let valence = STANDARD_VALENCE[a.el] || 0;
+        if (a.el === 'N' && a.charge === 1) valence = 4;
+        else if (a.el === 'O' && a.charge === -1) valence = 1;
+        else if (a.el === 'O' && a.charge === 1) valence = 3;
+        else if (a.el === 'S' && bondSum > 2) valence = bondSum <= 4 ? 4 : 6;
+        else if (a.el === 'P' && bondSum > 3) valence = 5;
+
+        a.hCount = Math.max(0, valence - bondSum);
+      }
+    }
+
+    /**
+     * ============================================================================
+     * 4. 精密2D座標レイアウトエンジン（ジグザグ120°・三重結合180°・環状正多角形）
+     *    ※ スクリーンショットで起きていた「単結合が一直線になるバグ」を完全に解消
+     * ============================================================================
+     */
+    function layoutGraph2D(graph, bondLength = 68) {
+      const { atoms, bonds } = graph;
+      const n = atoms.length;
+      if (n === 0) return { rings: [] };
+
+      // 隣接リスト構築
+      const adj = Array.from({ length: n }, () => []);
+      for (const b of bonds) {
+        adj[b.a1].push({ to: b.a2, order: b.order, bond: b });
+        adj[b.a2].push({ to: b.a1, order: b.order, bond: b });
+      }
+
+      // 最小環（サイズ3〜8）を検出
+      const rings = detectMinimalRings(n, adj, bonds);
+      const atomRings = Array.from({ length: n }, () => []);
+      rings.forEach((ring, rIdx) => {
+        ring.forEach(aId => atomRings[aId].push(rIdx));
+      });
+
+      const placed = new Set();
+      const ringCenters = new Array(rings.length).fill(null);
+
+      // 各原子から先の未配置サブツリーサイズを見積もる（主鎖を水平ジグザグに優先配置するため）
+      function estimateSubtreeScore(start, parent) {
+        const visited = new Set([parent, start]);
+        const q = [start];
+        let count = 1;
+        while (q.length > 0 && count < 40) {
+          const curr = q.shift();
+          for (const nb of adj[curr]) {
+            if (!visited.has(nb.to) && !placed.has(nb.to)) {
+              visited.add(nb.to);
+              count++;
+              q.push(nb.to);
+            }
+          }
+        }
+        // 炭素鎖を二重結合の酸素 (=O) より主鎖として優先
+        const atomBonus = atoms[start].el === 'C' ? 0.4 : 0;
+        const ringBonus = atomRings[start].length > 0 ? 5 : 0;
+        return count + atomBonus + ringBonus;
+      }
+
+      // 原子がsp混成（直線180°）かどうか判定
+      function isLinearSP(atomId) {
+        const edges = adj[atomId];
+        if (edges.length !== 2) return false;
+        const hasTriple = edges.some(e => e.order === 3);
+        const doubleCount = edges.filter(e => e.order === 2).length;
+        return hasTriple || doubleCount === 2;
+      }
+
+      // -------------------------------------------------------------
+      // A. 環の配置（最初の環は正多角形、縮合環は共有辺から外側へ展開）
+      // -------------------------------------------------------------
+      const placedRings = new Set();
+
+      function placeRing(rIdx) {
+        const ring = rings[rIdx];
+        const k = ring.length;
+        const radius = bondLength / (2 * Math.sin(Math.PI / k));
+        // 6員環・5員環・3員環は頂点が真上(-90°)になる標準的な向き
+        const startAngle = (k === 4) ? -Math.PI / 4 : -Math.PI / 2;
+        for (let idx = 0; idx < k; idx++) {
+          const angle = startAngle + (2 * Math.PI * idx) / k;
+          const a = atoms[ring[idx]];
+          a.x = radius * Math.cos(angle);
+          a.y = radius * Math.sin(angle);
+          placed.add(a.id);
+        }
+        ringCenters[rIdx] = { x: 0, y: 0 };
+        placedRings.add(rIdx);
+      }
+
+      // 共有辺を持つ隣接環（ナフタレンなどの縮合環）を配置
+      function placeFusedRings() {
+        let progress = true;
+        while (progress) {
+          progress = false;
+          for (let rIdx = 0; rIdx < rings.length; rIdx++) {
+            if (placedRings.has(rIdx)) continue;
+            const ring = rings[rIdx];
+            const k = ring.length;
+            // 既に配置済みの連続2頂点（共有辺）を探す
+            let sharedIdx = -1;
+            for (let idx = 0; idx < k; idx++) {
+              const u = ring[idx];
+              const v = ring[(idx + 1) % k];
+              if (placed.has(u) && placed.has(v)) {
+                sharedIdx = idx;
+                break;
+              }
+            }
+            if (sharedIdx === -1) continue;
+
+            const uId = ring[sharedIdx];
+            const vId = ring[(sharedIdx + 1) % k];
+            const u = atoms[uId];
+            const v = atoms[vId];
+
+            const dx = v.x - u.x;
+            const dy = v.y - u.y;
+            const edgeLen = Math.hypot(dx, dy) || bondLength;
+            const mx = (u.x + v.x) / 2;
+            const my = (u.y + v.y) / 2;
+            const apothem = edgeLen / (2 * Math.tan(Math.PI / k));
+            const radius = edgeLen / (2 * Math.sin(Math.PI / k));
+
+            // 共有辺に垂直な2方向のうち、既存の環の中心から遠い方（外側）を選ぶ
+            const nx1 = -dy / edgeLen, ny1 = dx / edgeLen;
+            const nx2 = dy / edgeLen, ny2 = -dx / edgeLen;
+            const c1 = { x: mx + nx1 * apothem, y: my + ny1 * apothem };
+            const c2 = { x: mx + nx2 * apothem, y: my + ny2 * apothem };
+
+            // 既存の配置済み頂点の重心との距離比較
+            let avgX = 0, avgY = 0;
+            for (const pid of placed) { avgX += atoms[pid].x; avgY += atoms[pid].y; }
+            avgX /= placed.size; avgY /= placed.size;
+
+            const d1 = Math.hypot(c1.x - avgX, c1.y - avgY);
+            const d2 = Math.hypot(c2.x - avgX, c2.y - avgY);
+            const center = d1 >= d2 ? c1 : c2;
+            ringCenters[rIdx] = center;
+
+            const angU = Math.atan2(u.y - center.y, u.x - center.x);
+            const angV = Math.atan2(v.y - center.y, v.x - center.x);
+            let step = angV - angU;
+            while (step <= -Math.PI) step += 2 * Math.PI;
+            while (step > Math.PI) step -= 2 * Math.PI;
+            const dir = step >= 0 ? 1 : -1;
+            const delta = dir * (2 * Math.PI / k);
+
+            for (let offset = 2; offset < k; offset++) {
+              const targetId = ring[(sharedIdx + offset) % k];
+              if (!placed.has(targetId)) {
+                const ang = angU + delta * offset;
+                atoms[targetId].x = center.x + radius * Math.cos(ang);
+                atoms[targetId].y = center.y + radius * Math.sin(ang);
+                placed.add(targetId);
+              }
+            }
+            placedRings.add(rIdx);
+            progress = true;
+          }
+        }
+      }
+
+      // -------------------------------------------------------------
+      // B. 鎖状部分のジグザグ配置（必ず +60° と -60° を交互に反転！）
+      // -------------------------------------------------------------
+      const queue = []; // { atomId, incomingAngle, nextTurn (+1 or -1) }
+
+      if (rings.length > 0) {
+        // 最も大きい環（ベンゼン環など）を基準に配置
+        let bestRingIdx = 0;
+        for (let r = 1; r < rings.length; r++) {
+          if (rings[r].length > rings[bestRingIdx].length) bestRingIdx = r;
+        }
+        placeRing(bestRingIdx);
+        placeFusedRings();
+
+        // 環から伸びる置換基を、環中心の反対方向（外向き二等分線）へ配置
+        for (const rIdx of placedRings) {
+          const ring = rings[rIdx];
+          for (const aId of ring) {
+            const unplacedNeighbors = adj[aId].filter(nb => !placed.has(nb.to));
+            if (unplacedNeighbors.length === 0) continue;
+
+            // 既配置の環結合の平均方向の逆（＝完全に外向き）
+            let vx = 0, vy = 0;
+            for (const nb of adj[aId]) {
+              if (placed.has(nb.to)) {
+                const dx = atoms[nb.to].x - atoms[aId].x;
+                const dy = atoms[nb.to].y - atoms[aId].y;
+                const d = Math.hypot(dx, dy) || 1;
+                vx += dx / d;
+                vy += dy / d;
+              }
+            }
+            const outAngle = Math.atan2(-vy, -vx);
+
+            // オルト位など隣に別の置換基がある場合、互いに離れる方向へ曲げる
+            let preferredTurn = 1;
+            const ringPos = ring.indexOf(aId);
+            if (ringPos !== -1) {
+              const prevA = ring[(ringPos - 1 + ring.length) % ring.length];
+              const nextA = ring[(ringPos + 1) % ring.length];
+              const prevHasSub = adj[prevA].some(nb => !placed.has(nb.to));
+              const nextHasSub = adj[nextA].some(nb => !placed.has(nb.to));
+              if (prevHasSub && !nextHasSub) preferredTurn = 1;
+              else if (nextHasSub && !prevHasSub) preferredTurn = -1;
+            }
+
+            if (unplacedNeighbors.length === 1) {
+              const nb = unplacedNeighbors[0];
+              atoms[nb.to].x = atoms[aId].x + bondLength * Math.cos(outAngle);
+              atoms[nb.to].y = atoms[aId].y + bondLength * Math.sin(outAngle);
+              placed.add(nb.to);
+              queue.push({ atomId: nb.to, incomingAngle: outAngle, nextTurn: preferredTurn });
+            } else {
+              // 同じ環炭素に2本以上の置換基がつく場合（例: gem-ジメチル）
+              const spread = Math.PI / 3;
+              unplacedNeighbors.forEach((nb, idx) => {
+                const offset = (idx - (unplacedNeighbors.length - 1) / 2) * spread;
+                const ang = outAngle + offset;
+                atoms[nb.to].x = atoms[aId].x + bondLength * Math.cos(ang);
+                atoms[nb.to].y = atoms[aId].y + bondLength * Math.sin(ang);
+                placed.add(nb.to);
+                queue.push({ atomId: nb.to, incomingAngle: ang, nextTurn: idx === 0 ? -1 : 1 });
+              });
+            }
+          }
+        }
+      } else {
+        // 環がない鎖状分子：末端原子から開始するとジグザグが最も美しく並ぶ
+        let rootId = 0;
+        for (let idx = 0; idx < n; idx++) {
+          if (adj[idx].length === 1) {
+            rootId = idx;
+            break;
+          }
+        }
+        atoms[rootId].x = 0;
+        atoms[rootId].y = 0;
+        placed.add(rootId);
+
+        const rootNeighbors = adj[rootId];
+        if (rootNeighbors.length === 1) {
+          // 2原子分子（エタン・エチレン・アセチレン）または直線分子は水平0°で美しく表示
+          const isTwoAtomOrLinear = (n === 2) || (n === 3 && isLinearSP(rootNeighbors[0].to));
+          const initAngle = isTwoAtomOrLinear ? 0 : -Math.PI / 6; // -30°（右上向き）
+          const nb = rootNeighbors[0];
+          atoms[nb.to].x = bondLength * Math.cos(initAngle);
+          atoms[nb.to].y = bondLength * Math.sin(initAngle);
+          placed.add(nb.to);
+          // 次の結合は +60° 回転して +30°（右下向き）になる -> 正確な120°ジグザグ！
+          queue.push({ atomId: nb.to, incomingAngle: initAngle, nextTurn: 1 });
+        } else if (rootNeighbors.length === 2) {
+          const angles = isLinearSP(rootId) ? [Math.PI, 0] : [Math.PI * 5 / 6, Math.PI / 6];
+          rootNeighbors.forEach((nb, idx) => {
+            const ang = angles[idx];
+            atoms[nb.to].x = bondLength * Math.cos(ang);
+            atoms[nb.to].y = bondLength * Math.sin(ang);
+            placed.add(nb.to);
+            queue.push({ atomId: nb.to, incomingAngle: ang, nextTurn: idx === 0 ? 1 : -1 });
+          });
+        } else {
+          // 中心から3〜4本分岐（ネオペンタン等の中心スタート時）
+          const step = (2 * Math.PI) / rootNeighbors.length;
+          const base = rootNeighbors.length === 3 ? -Math.PI / 2 : 0;
+          rootNeighbors.forEach((nb, idx) => {
+            const ang = base + idx * step;
+            atoms[nb.to].x = bondLength * Math.cos(ang);
+            atoms[nb.to].y = bondLength * Math.sin(ang);
+            placed.add(nb.to);
+            queue.push({ atomId: nb.to, incomingAngle: ang, nextTurn: 1 });
+          });
+        }
+      }
+
+      // 幅優先探索で鎖状・分岐部分を120°ジグザグ（三重結合は180°直線）で配置
+      while (queue.length > 0) {
+        const { atomId, incomingAngle, nextTurn } = queue.shift();
+        const unplaced = adj[atomId].filter(nb => !placed.has(nb.to));
+        if (unplaced.length === 0) continue;
+
+        // もし未配置の隣が別の未配置環に属している場合は、枝として繋いでから環を展開
+        // 最も重いサブツリー（主鎖）を先頭にする
+        unplaced.sort((a, b) => estimateSubtreeScore(b.to, atomId) - estimateSubtreeScore(a.to, atomId));
+
+        if (unplaced.length === 1) {
+          const nb = unplaced[0];
+          let nextAngle;
+          let childTurn;
+          if (isLinearSP(atomId)) {
+            // 三重結合・アレン等は180°直線に伸ばす
+            nextAngle = incomingAngle;
+            childTurn = nextTurn;
+          } else {
+            // ★ ここが核心：毎回 nextTurn * 60° 回転し、次へは -nextTurn を渡すことで
+            //   -30° -> +30° -> -30° -> +30° の正確な120°ジグザグを保証する！
+            nextAngle = incomingAngle + nextTurn * (Math.PI / 3);
+            childTurn = -nextTurn;
+          }
+          atoms[nb.to].x = atoms[atomId].x + bondLength * Math.cos(nextAngle);
+          atoms[nb.to].y = atoms[atomId].y + bondLength * Math.sin(nextAngle);
+          placed.add(nb.to);
+          queue.push({ atomId: nb.to, incomingAngle: nextAngle, nextTurn: childTurn });
+        } else if (unplaced.length === 2) {
+          // 3分岐（sp2 / sp3の枝分かれ）：主鎖をジグザグ方向、側鎖を反対60°（水平鎖なら真上/真下90°）へ
+          const mainAngle = incomingAngle + nextTurn * (Math.PI / 3);
+          const branchAngle = incomingAngle - nextTurn * (Math.PI / 3);
+          const angles = [mainAngle, branchAngle];
+          const turns = [-nextTurn, nextTurn];
+
+          unplaced.forEach((nb, idx) => {
+            atoms[nb.to].x = atoms[atomId].x + bondLength * Math.cos(angles[idx]);
+            atoms[nb.to].y = atoms[atomId].y + bondLength * Math.sin(angles[idx]);
+            placed.add(nb.to);
+            queue.push({ atomId: nb.to, incomingAngle: angles[idx], nextTurn: turns[idx] });
+          });
+        } else {
+          // 4分岐（第四級炭素など）：親の反対と上下90°の十字配置
+          const angles = [
+            incomingAngle,
+            incomingAngle - Math.PI / 2,
+            incomingAngle + Math.PI / 2
+          ];
+          unplaced.forEach((nb, idx) => {
+            const ang = angles[idx] !== undefined ? angles[idx] : incomingAngle + (idx * Math.PI) / 3;
+            atoms[nb.to].x = atoms[atomId].x + bondLength * Math.cos(ang);
+            atoms[nb.to].y = atoms[atomId].y + bondLength * Math.sin(ang);
+            placed.add(nb.to);
+            queue.push({ atomId: nb.to, incomingAngle: ang, nextTurn: -nextTurn });
+          });
+        }
+      }
+
+      // 未配置の非連結成分がある場合のフォールバック配置
+      let offsetX = 120;
+      for (let idx = 0; idx < n; idx++) {
+        if (!placed.has(idx)) {
+          atoms[idx].x = offsetX;
+          atoms[idx].y = 0;
+          offsetX += bondLength;
+          placed.add(idx);
+        }
+      }
+
+      // 各環の実際の重心座標を更新
+      const finalRings = rings.map(ring => {
+        let cx = 0, cy = 0;
+        for (const id of ring) { cx += atoms[id].x; cy += atoms[id].y; }
+        return { atoms: ring, cx: cx / ring.length, cy: cy / ring.length };
+      });
+
+      return { rings: finalRings };
+    }
+
+    /**
+     * BFSによりグラフ内の最小環（サイズ3〜8）を抽出
+     */
+    function detectMinimalRings(n, adj, bonds) {
+      const candidates = [];
+      const seenKeys = new Set();
+
+      for (const b of bonds) {
+        // 辺 (a1, a2) を通らずに a1 -> a2 の最短経路を探す
+        const dist = new Array(n).fill(-1);
+        const parent = new Array(n).fill(-1);
+        const q = [b.a1];
+        dist[b.a1] = 0;
+
+        while (q.length > 0) {
+          const u = q.shift();
+          if (dist[u] >= 7) continue;
+          for (const nb of adj[u]) {
+            if ((u === b.a1 && nb.to === b.a2) || (u === b.a2 && nb.to === b.a1)) continue;
+            if (dist[nb.to] === -1) {
+              dist[nb.to] = dist[u] + 1;
+              parent[nb.to] = u;
+              if (nb.to === b.a2) break;
+              q.push(nb.to);
+            }
+          }
+          if (dist[b.a2] !== -1) break;
+        }
+
+        if (dist[b.a2] >= 2) {
+          const cycle = [];
+          let curr = b.a2;
+          while (curr !== -1) {
+            cycle.push(curr);
+            curr = parent[curr];
+          }
+          const key = [...cycle].sort((x, y) => x - y).join(',');
+          if (!seenKeys.has(key)) {
+            seenKeys.add(key);
+            candidates.push(cycle);
+          }
+        }
+      }
+
+      // サイズの小さい環を優先し、既出の環の辺だけで構成される外周環を除外
+      candidates.sort((a, b) => a.length - b.length);
+      const result = [];
+      const coveredEdges = new Set();
+      const edgeKey = (u, v) => (u < v ? `${u}-${v}` : `${v}-${u}`);
+
+      for (const ring of candidates) {
+        const ringEdges = [];
+        for (let i = 0; i < ring.length; i++) {
+          ringEdges.push(edgeKey(ring[i], ring[(i + 1) % ring.length]));
+        }
+        const hasNewEdge = ringEdges.some(ek => !coveredEdges.has(ek));
+        if (hasNewEdge) {
+          result.push(ring);
+          ringEdges.forEach(ek => coveredEdges.add(ek));
+        }
+      }
+      return result;
+    }
+
+    /**
+     * ============================================================================
+     * 5. SVG 構造式レンダラー（3スタイル完全対応）
+     *    - full:      構造式（C・H・結合線をすべて表示）
+     *    - condensed: 簡略構造式（CH₃・OH等で表示）
+     *    - skeletal:  骨格構造式（折れ線式）
+     * ============================================================================
+     */
+    function renderMoleculeSVG(graph, meta, mode, showCarbonNumbers) {
+      const { atoms, bonds } = graph;
+      const n = atoms.length;
+      const adj = Array.from({ length: n }, () => []);
+      for (const b of bonds) {
+        adj[b.a1].push({ to: b.a2, order: b.order, bond: b });
+        adj[b.a2].push({ to: b.a1, order: b.order, bond: b });
+      }
+
+      // モードごとの最適な基準結合長にスケーリング（重なり防止）
+      const targetLen = mode === 'full' ? 84 : (mode === 'condensed' ? 78 : 66);
+      const scaledAtoms = scaleCoordinates(atoms, bonds, targetLen);
+      const rings = (meta && meta.rings) ? meta.rings.map(r => {
+        let cx = 0, cy = 0;
+        r.atoms.forEach(id => { cx += scaledAtoms[id].x; cy += scaledAtoms[id].y; });
+        return { atoms: r.atoms, cx: cx / r.atoms.length, cy: cy / r.atoms.length };
+      }) : [];
+
+      // 環に属する結合を高速検索するためのマップ
+      const bondRingMap = new Map();
+      const edgeKey = (u, v) => (u < v ? `${u}-${v}` : `${v}-${u}`);
+      for (const r of rings) {
+        for (let i = 0; i < r.atoms.length; i++) {
+          const ek = edgeKey(r.atoms[i], r.atoms[(i + 1) % r.atoms.length]);
+          if (!bondRingMap.has(ek)) bondRingMap.set(ek, r);
+        }
+      }
+
+      // 描画要素を蓄積する配列（レイヤー順：結合線 -> テキスト背景白抜き -> 原子ラベル -> 炭素番号）
+      const bondElements = [];
+      const haloElements = [];
+      const labelElements = [];
+      const numberElements = [];
+
+      // バウンディングボックス追跡用
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      const expandBox = (x, y, pad = 20) => {
+        if (x - pad < minX) minX = x - pad;
+        if (x + pad > maxX) maxX = x + pad;
+        if (y - pad < minY) minY = y - pad;
+        if (y + pad > maxY) maxY = y + pad;
+      };
+
+      scaledAtoms.forEach(a => expandBox(a.x, a.y, 26));
+
+      // -------------------------------------------------------------
+      // 1) 重原子間の結合線（単結合・二重結合・三重結合）を描画
+      // -------------------------------------------------------------
+      const strokeColor = '#1e293b';
+      const strokeWidth = mode === 'skeletal' ? 2.6 : 2.3;
+
+      for (const b of bonds) {
+        const p1 = scaledAtoms[b.a1];
+        const p2 = scaledAtoms[b.a2];
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const ux = dx / len;
+        const uy = dy / len;
+        const nx = -uy;
+        const ny = ux;
+
+        if (b.order === 1) {
+          bondElements.push(
+            `<line x1="${p1.x.toFixed(2)}" y1="${p1.y.toFixed(2)}" x2="${p2.x.toFixed(2)}" y2="${p2.y.toFixed(2)}" stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-linecap="round" />`
+          );
+        } else if (b.order === 2) {
+          const ek = edgeKey(b.a1, b.a2);
+          const ring = bondRingMap.get(ek);
+          const deg1 = adj[b.a1].length;
+          const deg2 = adj[b.a2].length;
+
+          // 環内の二重結合：外枠の主線 + 環中心側の短縮平行線（ChemDraw標準）
+          if (ring) {
+            const mx = (p1.x + p2.x) / 2;
+            const my = (p1.y + p2.y) / 2;
+            const dot = (ring.cx - mx) * nx + (ring.cy - my) * ny;
+            const side = dot >= 0 ? 1 : -1;
+            const sep = 6.5;
+            const inset = 0.14;
+            const sx1 = p1.x + dx * inset + nx * sep * side;
+            const sy1 = p1.y + dy * inset + ny * sep * side;
+            const sx2 = p2.x - dx * inset + nx * sep * side;
+            const sy2 = p2.y - dy * inset + ny * sep * side;
+
+            bondElements.push(
+              `<line x1="${p1.x.toFixed(2)}" y1="${p1.y.toFixed(2)}" x2="${p2.x.toFixed(2)}" y2="${p2.y.toFixed(2)}" stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-linecap="round" />`,
+              `<line x1="${sx1.toFixed(2)}" y1="${sy1.toFixed(2)}" x2="${sx2.toFixed(2)}" y2="${sy2.toFixed(2)}" stroke="${strokeColor}" stroke-width="${strokeWidth * 0.92}" stroke-linecap="round" />`
+            );
+          } else {
+            // 鎖状の二重結合：
+            // 骨格構造式でC=Cのように片側/両側に炭素鎖が繋がる場合は、
+            // 主軸を途切れさせず内角側に第2線を引くか、対称2本線で綺麗に表現
+            const isTerminalHetero = (atoms[b.a1].el !== 'C' && deg1 === 1) || (atoms[b.a2].el !== 'C' && deg2 === 1);
+            const isSymmetricEnd = (deg1 === 1 && deg2 === 1) || isTerminalHetero || mode !== 'skeletal';
+
+            if (isSymmetricEnd) {
+              const halfSep = 3.2;
+              bondElements.push(
+                `<line x1="${(p1.x + nx * halfSep).toFixed(2)}" y1="${(p1.y + ny * halfSep).toFixed(2)}" x2="${(p2.x + nx * halfSep).toFixed(2)}" y2="${(p2.y + ny * halfSep).toFixed(2)}" stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-linecap="round" />`,
+                `<line x1="${(p1.x - nx * halfSep).toFixed(2)}" y1="${(p1.y - ny * halfSep).toFixed(2)}" x2="${(p2.x - nx * halfSep).toFixed(2)}" y2="${(p2.y - ny * halfSep).toFixed(2)}" stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-linecap="round" />`
+              );
+            } else {
+              // 骨格構造式のアルケン（1-ブテン、2-ブテン等）：
+              // 主骨格の折れ線を連続させ、凹側（隣接原子がある側）に平行線を配置
+              let sideScore = 0;
+              for (const nb of adj[b.a1]) {
+                if (nb.to === b.a2) continue;
+                const v = scaledAtoms[nb.to];
+                sideScore += (v.x - p1.x) * nx + (v.y - p1.y) * ny;
+              }
+              for (const nb of adj[b.a2]) {
+                if (nb.to === b.a1) continue;
+                const v = scaledAtoms[nb.to];
+                sideScore += (v.x - p2.x) * nx + (v.y - p2.y) * ny;
+              }
+              const side = sideScore >= 0 ? 1 : -1;
+              const sep = 6.2;
+              const inset1 = deg1 > 1 ? 0.11 : 0.0;
+              const inset2 = deg2 > 1 ? 0.11 : 0.0;
+              const sx1 = p1.x + dx * inset1 + nx * sep * side;
+              const sy1 = p1.y + dy * inset1 + ny * sep * side;
+              const sx2 = p2.x - dx * inset2 + nx * sep * side;
+              const sy2 = p2.y - dy * inset2 + ny * sep * side;
+
+              bondElements.push(
+                `<line x1="${p1.x.toFixed(2)}" y1="${p1.y.toFixed(2)}" x2="${p2.x.toFixed(2)}" y2="${p2.y.toFixed(2)}" stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-linecap="round" />`,
+                `<line x1="${sx1.toFixed(2)}" y1="${sy1.toFixed(2)}" x2="${sx2.toFixed(2)}" y2="${sy2.toFixed(2)}" stroke="${strokeColor}" stroke-width="${strokeWidth * 0.95}" stroke-linecap="round" />`
+              );
+            }
+          }
+        } else if (b.order === 3) {
+          // 三重結合（3本の平行線）
+          const sep = 5.0;
+          const inset = 0.08;
+          bondElements.push(
+            `<line x1="${p1.x.toFixed(2)}" y1="${p1.y.toFixed(2)}" x2="${p2.x.toFixed(2)}" y2="${p2.y.toFixed(2)}" stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-linecap="round" />`,
+            `<line x1="${(p1.x + dx * inset + nx * sep).toFixed(2)}" y1="${(p1.y + dy * inset + ny * sep).toFixed(2)}" x2="${(p2.x - dx * inset + nx * sep).toFixed(2)}" y2="${(p2.y - dy * inset + ny * sep).toFixed(2)}" stroke="${strokeColor}" stroke-width="${strokeWidth * 0.9}" stroke-linecap="round" />`,
+            `<line x1="${(p1.x + dx * inset - nx * sep).toFixed(2)}" y1="${(p1.y + dy * inset - ny * sep).toFixed(2)}" x2="${(p2.x - dx * inset - nx * sep).toFixed(2)}" y2="${(p2.y - dy * inset - ny * sep).toFixed(2)}" stroke="${strokeColor}" stroke-width="${strokeWidth * 0.9}" stroke-linecap="round" />`
+          );
+        }
+      }
+
+      // -------------------------------------------------------------
+      // 2) モード別の水素・原子ラベル描画
+      // -------------------------------------------------------------
+      if (mode === 'full') {
+        // 【モード1：構造式（すべてのC・H・結合線を表示）】
+        const hBondLen = targetLen * 0.56;
+
+        for (let i = 0; i < n; i++) {
+          const a = scaledAtoms[i];
+          const elColor = ELEMENT_COLORS[a.el] || '#0f172a';
+
+          // 重原子の白抜き円＋元素記号
+          haloElements.push(`<circle cx="${a.x.toFixed(2)}" cy="${a.y.toFixed(2)}" r="13" fill="#ffffff" />`);
+          labelElements.push(
+            `<text x="${a.x.toFixed(2)}" y="${a.y.toFixed(2)}" text-anchor="middle" dominant-baseline="central" font-size="18" font-weight="700" fill="${elColor}">${a.el}${formatChargeSup(a.charge)}</text>`
+          );
+
+          // 結合しているH原子を周囲の空き角度へ重ならないよう綺麗に展開
+          if (a.hCount > 0) {
+            const hAngles = computeHydrogenAngles(i, scaledAtoms, adj, a.hCount);
+            for (const ang of hAngles) {
+              const hx = a.x + hBondLen * Math.cos(ang);
+              const hy = a.y + hBondLen * Math.sin(ang);
+              expandBox(hx, hy, 22);
+
+              bondElements.push(
+                `<line x1="${a.x.toFixed(2)}" y1="${a.y.toFixed(2)}" x2="${hx.toFixed(2)}" y2="${hy.toFixed(2)}" stroke="#64748b" stroke-width="1.9" stroke-linecap="round" />`
+              );
+              haloElements.push(`<circle cx="${hx.toFixed(2)}" cy="${hy.toFixed(2)}" r="10.5" fill="#ffffff" />`);
+              labelElements.push(
+                `<text x="${hx.toFixed(2)}" y="${hy.toFixed(2)}" text-anchor="middle" dominant-baseline="central" font-size="15.5" font-weight="600" fill="#475569">H</text>`
+              );
+            }
+          }
+        }
+      } else if (mode === 'condensed') {
+        // 【モード2：簡略構造式（CH₃・CH₂・CH・OH等で表示）】
+        for (let i = 0; i < n; i++) {
+          const a = scaledAtoms[i];
+          const elColor = ELEMENT_COLORS[a.el] || '#0f172a';
+          const leftBonded = isStrictlyRightGoingBond(i, scaledAtoms, adj);
+          const { svgText, estWidth } = buildGroupLabelSVG(a.el, a.hCount, a.charge, leftBonded && a.el !== 'C');
+
+          const boxW = Math.max(26, estWidth + 10);
+          const boxH = 26;
+          expandBox(a.x, a.y, boxW / 2 + 12);
+
+          haloElements.push(
+            `<rect x="${(a.x - boxW / 2).toFixed(2)}" y="${(a.y - boxH / 2).toFixed(2)}" width="${boxW.toFixed(2)}" height="${boxH}" rx="8" fill="#ffffff" />`
+          );
+          labelElements.push(
+            `<text x="${a.x.toFixed(2)}" y="${(a.y + 1).toFixed(2)}" text-anchor="middle" dominant-baseline="central" font-size="17.5" font-weight="700" fill="${elColor}">${svgText}</text>`
+          );
+        }
+      } else {
+        // 【モード3：骨格構造式（折れ線式）】
+        for (let i = 0; i < n; i++) {
+          const a = scaledAtoms[i];
+          const edges = adj[i];
+
+          // 炭素(C)は原則非表示。ただし単一分子(CH4)やアレン中心(C=C=C)のみ表示
+          const isAlleneCenter = a.el === 'C' && edges.length === 2 && edges[0].order === 2 && edges[1].order === 2;
+          const isLoneCarbon = a.el === 'C' && edges.length === 0;
+          const showAtom = (a.el !== 'C') || isLoneCarbon || isAlleneCenter || a.charge !== 0;
+
+          if (!showAtom) continue;
+
+          const elColor = ELEMENT_COLORS[a.el] || '#0f172a';
+          const leftBonded = isStrictlyRightGoingBond(i, scaledAtoms, adj);
+          const { svgText, estWidth } = buildGroupLabelSVG(a.el, a.hCount, a.charge, leftBonded);
+
+          const boxW = Math.max(24, estWidth + 8);
+          const boxH = 24;
+          expandBox(a.x, a.y, boxW / 2 + 12);
+
+          haloElements.push(
+            `<rect x="${(a.x - boxW / 2).toFixed(2)}" y="${(a.y - boxH / 2).toFixed(2)}" width="${boxW.toFixed(2)}" height="${boxH}" rx="7" fill="#ffffff" />`
+          );
+          labelElements.push(
+            `<text x="${a.x.toFixed(2)}" y="${(a.y + 1).toFixed(2)}" text-anchor="middle" dominant-baseline="central" font-size="17.5" font-weight="700" fill="${elColor}">${svgText}</text>`
+          );
+        }
+      }
+
+      // -------------------------------------------------------------
+      // 3) 学習用：炭素位置番号のオーバーレイ表示（オプション）
+      // -------------------------------------------------------------
+      if (showCarbonNumbers) {
+        let cNum = 1;
+        for (let i = 0; i < n; i++) {
+          const a = scaledAtoms[i];
+          if (a.el !== 'C') continue;
+          // 結合のない空き方向へ小さく配置
+          const emptyAngles = computeHydrogenAngles(i, scaledAtoms, adj, 1);
+          const ang = emptyAngles[0] ?? -Math.PI / 2;
+          const dist = mode === 'skeletal' ? 16 : 24;
+          const nx = a.x + dist * Math.cos(ang);
+          const ny = a.y + dist * Math.sin(ang);
+          expandBox(nx, ny, 14);
+
+          numberElements.push(
+            `<circle cx="${nx.toFixed(2)}" cy="${ny.toFixed(2)}" r="8.5" fill="#eff6ff" stroke="#3b82f6" stroke-width="1" />`,
+            `<text x="${nx.toFixed(2)}" y="${(ny + 0.5).toFixed(2)}" text-anchor="middle" dominant-baseline="central" font-size="10" font-weight="700" fill="#1d4ed8">${cNum}</text>`
+          );
+          cNum++;
+        }
+      }
+
+      // ViewBoxの余白計算（小さい分子が巨大になりすぎないよう最小サイズを設定）
+      const pad = 34;
+      let width = (maxX - minX) + pad * 2;
+      let height = (maxY - minY) + pad * 2;
+      let vbX = minX - pad;
+      let vbY = minY - pad;
+
+      const minVbW = 280;
+      const minVbH = 200;
+      if (width < minVbW) {
+        vbX -= (minVbW - width) / 2;
+        width = minVbW;
+      }
+      if (height < minVbH) {
+        vbY -= (minVbH - height) / 2;
+        height = minVbH;
+      }
+
+      return `
+        <svg id="molecule-svg" class="chem-svg w-full max-w-[720px] max-h-[420px] h-auto" viewBox="${vbX.toFixed(1)} ${vbY.toFixed(1)} ${width.toFixed(1)} ${height.toFixed(1)}" xmlns="http://www.w3.org/2000/svg">
+          <rect x="${vbX.toFixed(1)}" y="${vbY.toFixed(1)}" width="${width.toFixed(1)}" height="${height.toFixed(1)}" fill="#ffffff" />
+          <g class="bonds">${bondElements.join('')}</g>
+          <g class="halos">${haloElements.join('')}</g>
+          <g class="labels" font-family="Inter, 'Noto Sans JP', sans-serif">${labelElements.join('')}</g>
+          <g class="carbon-numbers" font-family="Inter, sans-serif">${numberElements.join('')}</g>
+        </svg>
+      `;
+    }
+
+    /**
+     * 座標の中央値結合長を targetLen に正規化
+     */
+    function scaleCoordinates(atoms, bonds, targetLen) {
+      if (bonds.length === 0) {
+        return atoms.map(a => ({ ...a }));
+      }
+      const lengths = bonds
+        .map(b => Math.hypot(atoms[b.a2].x - atoms[b.a1].x, atoms[b.a2].y - atoms[b.a1].y))
+        .filter(d => d > 0.001)
+        .sort((a, b) => a - b);
+
+      const medianLen = lengths.length > 0 ? lengths[Math.floor(lengths.length / 2)] : targetLen;
+      const scale = targetLen / medianLen;
+
+      return atoms.map(a => ({
+        ...a,
+        x: a.x * scale,
+        y: a.y * scale
+      }));
+    }
+
+    /**
+     * 重原子の周囲にある既存結合から、水素(H)が重ならない最適な角度リストを計算
+     */
+    function computeHydrogenAngles(atomIdx, atoms, adj, hCount) {
+      const a = atoms[atomIdx];
+      const edges = adj[atomIdx];
+      const existingAngles = edges
+        .map(nb => Math.atan2(atoms[nb.to].y - a.y, atoms[nb.to].x - a.x))
+        .sort((x, y) => x - y);
+
+      // 孤立原子（メタン・水・アンモニアなど）
+      if (existingAngles.length === 0) {
+        if (hCount === 4) return [0, Math.PI / 2, Math.PI, -Math.PI / 2];
+        if (hCount === 3) return [-Math.PI / 2, Math.PI / 6, Math.PI * 5 / 6];
+        if (hCount === 2) return [-Math.PI * 5 / 6, -Math.PI / 6];
+        return [0];
+      }
+
+      // 末端原子（結合が1本：-CH3, =CH2, ≡CH, -OH, -NH2 等）
+      if (existingAngles.length === 1) {
+        const theta = existingAngles[0];
+        if (hCount === 1) {
+          // 三重結合末端は直線180°、それ以外（-OH等）は120°屈曲
+          return edges[0].order === 3 ? [theta + Math.PI] : [theta + (2 * Math.PI) / 3];
+        }
+        if (hCount === 2) {
+          return [theta + (2 * Math.PI) / 3, theta - (2 * Math.PI) / 3];
+        }
+        if (hCount === 3) {
+          return [theta - Math.PI / 2, theta + Math.PI, theta + Math.PI / 2];
+        }
+      }
+
+      // 結合が2本以上：最も広い角度の隙間（最大ギャップ）を探して配置
+      let bestGap = -1;
+      let bestMid = 0;
+      for (let i = 0; i < existingAngles.length; i++) {
+        const a1 = existingAngles[i];
+        const a2 = i + 1 < existingAngles.length ? existingAngles[i + 1] : existingAngles[0] + 2 * Math.PI;
+        const gap = a2 - a1;
+        if (gap > bestGap) {
+          bestGap = gap;
+          bestMid = a1 + gap / 2;
+        }
+      }
+
+      if (hCount === 1) {
+        return [bestMid];
+      }
+      if (hCount === 2) {
+        const spread = Math.min(Math.PI / 4.2, bestGap * 0.3);
+        return [bestMid - spread, bestMid + spread];
+      }
+      // 3本以上（通常起きないが安全処理）
+      const out = [];
+      for (let k = 0; k < hCount; k++) {
+        out.push(bestMid + ((k - (hCount - 1) / 2) * (bestGap * 0.6)) / hCount);
+      }
+      return out;
+    }
+
+    // 結合が右方向のみに出ている末端ヘテロ原子か判定（例: HO- の向きにするため）
+    function isStrictlyRightGoingBond(atomIdx, atoms, adj) {
+      const edges = adj[atomIdx];
+      if (edges.length !== 1) return false;
+      const dx = atoms[edges[0].to].x - atoms[atomIdx].x;
+      const dy = atoms[edges[0].to].y - atoms[atomIdx].y;
+      return dx > Math.abs(dy) * 0.4;
+    }
+
+    function formatChargeSup(charge) {
+      if (!charge) return '';
+      const sign = charge > 0 ? '+' : '−';
+      const mag = Math.abs(charge) > 1 ? Math.abs(charge) : '';
+      return `<tspan dy="-6" font-size="11" font-weight="700">${mag}${sign}</tspan><tspan dy="6"> </tspan>`;
+    }
+
+    // CH₃ や HO などの下付き文字付きSVGテキストを生成
+    function buildGroupLabelSVG(el, hCount, charge, hFirst) {
+      const subStr = hCount > 1 ? `<tspan dy="4.5" font-size="12.5">${hCount}</tspan><tspan dy="-4.5"></tspan>` : '';
+      const hPart = hCount > 0 ? `H${subStr}` : '';
+      const chargePart = formatChargeSup(charge);
+
+      let svgText;
+      if (hFirst && hCount > 0) {
+        svgText = `${hPart}${el}${chargePart}`;
+      } else {
+        svgText = `${el}${hPart}${chargePart}`;
+      }
+
+      const plainLen = el.length + (hCount > 0 ? 1 : 0) + (hCount > 1 ? 0.7 : 0) + (charge ? 0.7 : 0);
+      return { svgText, estWidth: plainLen * 11.5 };
+    }
+
+    /**
+     * ============================================================================
+     * 6. PubChem API 連携（プリセットにない任意化合物もリアルタイム検索）
+     * ============================================================================
+     */
+    async function fetchFromPubChem(query) {
+      const encoded = encodeURIComponent(query);
+      const propUrl = `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/${encoded}/property/MolecularFormula,IUPACName,CanonicalSMILES,ConnectivitySMILES,IsomericSMILES,Title/JSON`;
+      const propRes = await fetch(propUrl);
+      if (!propRes.ok) throw new Error('PubChemで該当化合物が見つかりませんでした');
+      const propData = await propRes.json();
+      const props = propData?.PropertyTable?.Properties?.[0];
+      if (!props) throw new Error('化合物プロパティを取得できませんでした');
+
+      const cid = props.CID;
+      const smiles = props.CanonicalSMILES || props.ConnectivitySMILES || props.SMILES || props.IsomericSMILES || '';
+
+      // 複雑な分子（カフェイン等）も完璧に描けるよう、PubChem公式2D座標の取得を試みる
+      let pubchemGraph = null;
+      try {
+        const recRes = await fetch(`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${cid}/JSON?record_type=2d`);
+        if (recRes.ok) {
+          const recData = await recRes.json();
+          pubchemGraph = parsePubChem2DRecord(recData);
+        }
+      } catch (e) {
+        // 2Dレコード取得失敗時はSMILESレイアウトへフォールバック
+      }
+
+      return {
+        name: query,
+        enName: props.Title || query,
+        iupac: props.IUPACName || props.Title || '',
+        iupacJp: translateIupacToJp(props.IUPACName || ''),
+        formula: props.MolecularFormula || '',
+        smiles,
+        category: 'PubChem検索',
+        cid,
+        pubchemGraph
+      };
+    }
+
+    /**
+     * PubChemの2D JSONレコードを重原子グラフ＋水素カウントへ変換
+     */
+    function parsePubChem2DRecord(recData) {
+      const comp = recData?.PC_Compounds?.[0];
+      if (!comp || !comp.atoms || !comp.coords?.[0]?.conformers?.[0]) return null;
+
+      const aids = comp.atoms.aid || [];
+      const elements = comp.atoms.element || [];
+      const xs = comp.coords[0].conformers[0].x || [];
+      const ys = comp.coords[0].conformers[0].y || [];
+      const charges = {};
+      if (comp.atoms.charge) {
+        for (const c of comp.atoms.charge) charges[c.aid] = c.value;
+      }
+
+      const aidToHeavyIdx = new Map();
+      const atoms = [];
+      const hAids = new Set();
+
+      for (let i = 0; i < aids.length; i++) {
+        const el = ATOMIC_NUMBER_TO_SYMBOL[elements[i]] || 'C';
+        if (el === 'H') {
+          hAids.add(aids[i]);
+          continue;
+        }
+        aidToHeavyIdx.set(aids[i], atoms.length);
+        // PubChemのY軸は上向き、SVGは下向きなのでYを反転
+        atoms.push({
+          id: atoms.length,
+          el,
+          charge: charges[aids[i]] || 0,
+          hCount: 0,
+          x: xs[i] * 50,
+          y: -ys[i] * 50
+        });
+      }
+
+      if (atoms.length === 0) return null;
+
+      const bonds = [];
+      const bAid1 = comp.bonds?.aid1 || [];
+      const bAid2 = comp.bonds?.aid2 || [];
+      const bOrder = comp.bonds?.order || [];
+
+      for (let i = 0; i < bAid1.length; i++) {
+        const u = bAid1[i];
+        const v = bAid2[i];
+        const ord = Math.min(3, Math.max(1, bOrder[i] || 1));
+        if (hAids.has(u) && aidToHeavyIdx.has(v)) {
+          atoms[aidToHeavyIdx.get(v)].hCount++;
+        } else if (hAids.has(v) && aidToHeavyIdx.has(u)) {
+          atoms[aidToHeavyIdx.get(u)].hCount++;
+        } else if (aidToHeavyIdx.has(u) && aidToHeavyIdx.has(v)) {
+          bonds.push({ a1: aidToHeavyIdx.get(u), a2: aidToHeavyIdx.get(v), order: ord });
+        }
+      }
+
+      // 環情報を付与して二重結合の内側オフセットを有効化
+      const adj = Array.from({ length: atoms.length }, () => []);
+      for (const b of bonds) {
+        adj[b.a1].push({ to: b.a2, order: b.order, bond: b });
+        adj[b.a2].push({ to: b.a1, order: b.order, bond: b });
+      }
+      const rawRings = detectMinimalRings(atoms.length, adj, bonds);
+      const rings = rawRings.map(ring => {
+        let cx = 0, cy = 0;
+        ring.forEach(id => { cx += atoms[id].x; cy += atoms[id].y; });
+        return { atoms: ring, cx: cx / ring.length, cy: cy / ring.length };
+      });
+
+      return { graph: { atoms, bonds }, meta: { rings } };
+    }
+
+    /**
+     * ============================================================================
+     * 7. アプリケーション状態管理 & UIイベント制御
+     * ============================================================================
+     */
+    const state = {
+      currentCompound: null,
+      currentGraph: null,
+      currentMeta: null,
+      mode: 'skeletal', // デフォルトをスクリーンショットと同じ「骨格構造式」に設定
+      showCarbonNumbers: false,
+      activeCategory: 'すべて',
+      sourceLabel: '精密ジグザグ・環状レイアウトエンジン'
+    };
+
+    // トースト表示
+    let toastTimer = null;
+    function showToast(msg, isError = false) {
+      const toast = document.getElementById('toast');
+      const inner = document.getElementById('toast-inner');
+      const msgEl = document.getElementById('toast-message');
+      msgEl.textContent = msg;
+      inner.className = isError
+        ? 'flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg text-sm font-medium bg-rose-600 text-white'
+        : 'flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg text-sm font-medium bg-slate-900 text-white';
+
+      toast.classList.remove('hidden');
+      requestAnimationFrame(() => {
+        toast.classList.remove('translate-y-2', 'opacity-0');
+      });
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        toast.classList.add('translate-y-2', 'opacity-0');
+        setTimeout(() => toast.classList.add('hidden'), 300);
+      }, 2600);
+    }
+
+    // 化合物データを読み込み画面へ反映
+    function displayCompound(compound) {
+      try {
+        let graph, meta;
+        if (compound.pubchemGraph) {
+          graph = compound.pubchemGraph.graph;
+          meta = compound.pubchemGraph.meta;
+          state.sourceLabel = 'PubChem 2D精密座標 + 高精細SVGレンダラー';
+        } else {
+          graph = parseSMILES(compound.smiles);
+          meta = layoutGraph2D(graph, 68);
+          state.sourceLabel = '精密ジグザグ・環状レイアウトエンジン';
+        }
+
+        state.currentCompound = compound;
+        state.currentGraph = graph;
+        state.currentMeta = meta;
+
+        // 情報カードの更新
+        const titleText = (compound.enName && compound.enName.toLowerCase() !== compound.name.toLowerCase())
+          ? `${compound.name} (${compound.enName})`
+          : compound.name;
+        document.getElementById('info-title').textContent = titleText;
+        document.getElementById('info-category').textContent = compound.category || '有機化合物';
+
+        const formula = compound.formula || computeFormulaFromGraph(graph);
+        document.getElementById('info-formula').innerHTML = formatFormulaHTML(formula);
+        document.getElementById('info-iupac').textContent = compound.iupac || '—';
+
+        const jpWrap = document.getElementById('info-iupac-jp-wrap');
+        if (compound.iupacJp) {
+          jpWrap.classList.remove('hidden');
+          document.getElementById('info-iupac-jp').textContent = compound.iupacJp;
+        } else {
+          jpWrap.classList.add('hidden');
+        }
+
+        document.getElementById('info-smiles').textContent = compound.smiles || '—';
+        document.getElementById('coord-source-badge').textContent = state.sourceLabel;
+
+        // PubChem外部リンク設定
+        const pubchemUrl = compound.cid
+          ? `https://pubchem.ncbi.nlm.nih.gov/compound/${compound.cid}`
+          : `https://pubchem.ncbi.nlm.nih.gov/#query=${encodeURIComponent(compound.enName || compound.smiles || compound.name)}`;
+        document.getElementById('pubchem-link').href = pubchemUrl;
+
+        // 描画実行
+        redrawStructure();
+        highlightActivePreset();
+      } catch (err) {
+        console.error(err);
+        showToast('構造式の生成に失敗しました: ' + err.message, true);
+      }
+    }
+
+    function redrawStructure() {
+      if (!state.currentGraph) return;
+      const svgHTML = renderMoleculeSVG(
+        state.currentGraph,
+        state.currentMeta,
+        state.mode,
+        state.showCarbonNumbers
+      );
+      document.getElementById('svg-container').innerHTML = svgHTML;
+      updateModeButtonsUI();
+    }
+
+    function updateModeButtonsUI() {
+      document.querySelectorAll('.mode-btn').forEach(btn => {
+        const isActive = btn.dataset.mode === state.mode;
+        if (isActive) {
+          btn.className = 'mode-btn px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold border-2 border-slate-900 bg-blue-600 text-white shadow-sm transition flex items-center gap-2 cursor-pointer';
+        } else {
+          btn.className = 'mode-btn px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition flex items-center gap-2 cursor-pointer';
+        }
+      });
+
+      const numBtn = document.getElementById('toggle-numbers-btn');
+      if (state.showCarbonNumbers) {
+        numBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold border border-blue-600 bg-blue-50 text-blue-700 transition cursor-pointer';
+      } else {
+        numBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-200 text-slate-600 hover:bg-slate-50 transition cursor-pointer';
+      }
+    }
+
+    // プリセット一覧の生成
+    function renderPresets() {
+      const categories = ['すべて', ...new Set(PRESET_COMPOUNDS.map(c => c.category))];
+      const tabsEl = document.getElementById('category-tabs');
+      tabsEl.innerHTML = categories.map(cat => {
+        const active = cat === state.activeCategory;
+        return `
+          <button type="button" data-cat="${cat}" class="cat-tab px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
+            active ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+          }">${cat}</button>
+        `;
+      }).join('');
+
+      tabsEl.querySelectorAll('.cat-tab').forEach(btn => {
+        btn.addEventListener('click', () => {
+          state.activeCategory = btn.dataset.cat;
+          renderPresets();
+        });
+      });
+
+      const filtered = state.activeCategory === 'すべて'
+        ? PRESET_COMPOUNDS
+        : PRESET_COMPOUNDS.filter(c => c.category === state.activeCategory);
+
+      const gridEl = document.getElementById('preset-grid');
+      gridEl.innerHTML = filtered.map(c => `
+        <button
+          type="button"
+          data-smiles="${c.smiles}"
+          data-name="${c.name}"
+          class="preset-chip px-3 py-1.5 rounded-xl text-xs sm:text-sm font-medium border transition cursor-pointer bg-slate-50 border-slate-200 text-slate-700 hover:border-blue-400 hover:bg-blue-50/50 hover:text-blue-700"
+        >${c.name}</button>
+      `).join('');
+
+      gridEl.querySelectorAll('.preset-chip').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const found = PRESET_COMPOUNDS.find(c => c.name === btn.dataset.name);
+          if (found) {
+            document.getElementById('search-input').value = found.name;
+            displayCompound(found);
+          }
+        });
+      });
+
+      highlightActivePreset();
+    }
+
+    function highlightActivePreset() {
+      const activeName = state.currentCompound?.name;
+      document.querySelectorAll('.preset-chip').forEach(btn => {
+        if (btn.dataset.name === activeName) {
+          btn.className = 'preset-chip px-3 py-1.5 rounded-xl text-xs sm:text-sm font-bold border transition cursor-pointer bg-blue-600 border-blue-600 text-white shadow-sm';
+        } else {
+          btn.className = 'preset-chip px-3 py-1.5 rounded-xl text-xs sm:text-sm font-medium border transition cursor-pointer bg-slate-50 border-slate-200 text-slate-700 hover:border-blue-400 hover:bg-blue-50/50 hover:text-blue-700';
+        }
+      });
+    }
+
+    // 検索処理（プリセット一致 -> SMILES直接パース -> PubChem API検索）
+    async function handleSearch(rawQuery) {
+      const q = rawQuery.trim();
+      if (!q) return;
+
+      // 1. 内蔵プリセットから検索（日本語名・英語名・IUPAC名・SMILES完全一致）
+      const qLower = q.toLowerCase();
+      const presetMatch = PRESET_COMPOUNDS.find(c =>
+        c.name.toLowerCase() === qLower ||
+        c.enName.toLowerCase() === qLower ||
+        c.iupac.toLowerCase() === qLower ||
+        c.iupacJp.toLowerCase() === qLower ||
+        c.smiles === q
+      );
+      if (presetMatch) {
+        displayCompound(presetMatch);
+        return;
+      }
+
+      // 2. SMILESっぽい入力（ASCIIのみで記号や炭素を含む）なら直接パースを試みる
+      const looksLikeSMILES = /^[A-Za-z0-9@+\-\[\]\(\)=#$:/\\.%]+$/.test(q) && /[CcNnOo]/.test(q) && (/[=#\(\)0-9\[\]]/.test(q) || /^C+$/.test(q));
+      if (looksLikeSMILES) {
+        try {
+          const g = parseSMILES(q);
+          displayCompound({
+            name: 'SMILES入力構造',
+            enName: q,
+            iupac: 'Custom SMILES',
+            iupacJp: '',
+            formula: computeFormulaFromGraph(g),
+            smiles: q,
+            category: 'SMILES直接入力'
+          });
+          showToast('SMILESから構造式を生成しました');
+          return;
+        } catch (e) {
+          // 英語の化合物名としてPubChem検索へ進む
+        }
+      }
+
+      // 3. PubChem APIでオンライン検索
+      const btnText = document.getElementById('search-btn-text');
+      const spinner = document.getElementById('search-spinner');
+      btnText.textContent = '検索中...';
+      spinner.classList.remove('hidden');
+
+      try {
+        const searchWord = /[^\x00-\x7F]/.test(q) ? translateJpNameToEn(q) : q;
+        const result = await fetchFromPubChem(searchWord);
+        if (/[^\x00-\x7F]/.test(q)) {
+          result.name = q;
+        }
+        displayCompound(result);
+        showToast(`「${result.name}」をPubChemから取得しました`);
+      } catch (err) {
+        showToast('該当する化合物が見つかりませんでした。英語名やSMILESでもお試しください。', true);
+      } finally {
+        btnText.textContent = '表示・検索';
+        spinner.classList.add('hidden');
+      }
+    }
+
+    // クリップボードコピー（iFrame対応のexecCommand使用）
+    function copyTextFallback(text) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand('copy');
+        showToast(`SMILES「${text}」をコピーしました`);
+      } catch (e) {
+        showToast('コピーに失敗しました', true);
+      }
+      document.body.removeChild(ta);
+    }
+
+    // SVGダウンロード
+    function downloadCurrentSVG() {
+      const svgEl = document.getElementById('molecule-svg');
+      if (!svgEl) return;
+      const serializer = new XMLSerializer();
+      const source = '<?xml version="1.0" encoding="UTF-8"?>\n' + serializer.serializeToString(svgEl);
+      const blob = new Blob([source], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const safeName = (state.currentCompound?.enName || 'structure').replace(/[^a-zA-Z0-9_-]/g, '_');
+      a.download = `${safeName}_${state.mode}.svg`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('SVG画像を保存しました');
+    }
+
+    // イベントリスナーの初期化
+    window.addEventListener('DOMContentLoaded', () => {
+      // 表示スタイル切り替えボタン
+      document.querySelectorAll('.mode-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          state.mode = btn.dataset.mode;
+          redrawStructure();
+        });
+      });
+
+      // 炭素番号トグル
+      document.getElementById('toggle-numbers-btn').addEventListener('click', () => {
+        state.showCarbonNumbers = !state.showCarbonNumbers;
+        redrawStructure();
+      });
+
+      // SVG保存
+      document.getElementById('download-svg-btn').addEventListener('click', downloadCurrentSVG);
+
+      // SMILESコピー
+      document.getElementById('copy-smiles-btn').addEventListener('click', () => {
+        const smiles = state.currentCompound?.smiles;
+        if (smiles) copyTextFallback(smiles);
+      });
+
+      // 検索フォーム送信
+      document.getElementById('search-form').addEventListener('submit', e => {
+        e.preventDefault();
+        handleSearch(document.getElementById('search-input').value);
+      });
+
+      // プリセット描画＆初期表示（1-ブテン・骨格構造式）
+      renderPresets();
+      const initialCompound = PRESET_COMPOUNDS.find(c => c.name === '1-ブテン') || PRESET_COMPOUNDS[0];
+      displayCompound(initialCompound);
+    });
+  </script>
+</body>
+</html>
