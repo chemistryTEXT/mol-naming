@@ -974,6 +974,7 @@
         let currentTool = 'bond1';
         let structureDisplayMode = 'condensed'; // 'full' | 'condensed' | 'skeletal'（初期値は編集しやすい簡略構造式に統一）
         let lastDrawnSmiles = "";
+        let lastDrawnPubChemRecord = null;
         let chemGraph = {
             atoms: [], // { id, x, y, el: 'C'|'O'|'N'|'Cl'|'Br'|'COOH'|'CHO'|'NO2' }
             bonds: [], // { a1, a2, order: 1|2|3 }
@@ -1870,8 +1871,8 @@
                 if (btn1) btn1.className = (m === mode) ? activeClass : inactiveClass;
                 if (btn2) btn2.className = (m === mode) ? activeClass : inactiveClass;
             });
-            if (lastDrawnSmiles) {
-                drawStructureOnCanvas(lastDrawnSmiles, document.getElementById('name-error-message'));
+            if (lastDrawnPubChemRecord || lastDrawnSmiles) {
+                drawStructureOnCanvas(lastDrawnSmiles, document.getElementById('name-error-message'), lastDrawnPubChemRecord);
             }
             renderChemCanvas();
         }
@@ -2712,12 +2713,246 @@
             }
         }
 
-        // キャンバスにSMILES構造式を描画する統合ヘルパー
-        function drawStructureOnCanvas(smiles, errorEl) {
-            if (!smiles) return;
+        // 原子番号を元素記号に変換するマップ
+        const ATOMIC_NUM_TO_SYMBOL = {
+            1: 'H', 5: 'B', 6: 'C', 7: 'N', 8: 'O', 9: 'F',
+            11: 'Na', 12: 'Mg', 14: 'Si', 15: 'P', 16: 'S', 17: 'Cl',
+            19: 'K', 20: 'Ca', 35: 'Br', 53: 'I'
+        };
+
+        // PubChem公式の2D精密座標データ（PC_Compounds）を使ってプロ品質の120°ジグザグ構造式を描画する関数
+        function drawPubChem2DRecord(recordData, canvas, mode) {
+            const comp = recordData?.PC_Compounds?.[0];
+            if (!comp || !comp.atoms || !comp.coords?.[0]?.conformers?.[0]) {
+                return false;
+            }
+
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const aids = comp.atoms.aid || [];
+            const elements = comp.atoms.element || [];
+            const xArr = comp.coords[0].conformers[0].x || [];
+            const yArr = comp.coords[0].conformers[0].y || [];
+
+            const chargeMap = new Map();
+            if (Array.isArray(comp.atoms.charge)) {
+                comp.atoms.charge.forEach(c => chargeMap.set(c.aid, c.value));
+            }
+
+            const atomByAid = new Map();
+            const allAtoms = [];
+            for (let i = 0; i < aids.length; i++) {
+                const aid = aids[i];
+                const el = ATOMIC_NUM_TO_SYMBOL[elements[i]] || 'C';
+                // PubChemのY軸は上がプラスなので、Canvas描画用にY座標を反転する
+                const node = {
+                    aid,
+                    el,
+                    x: xArr[i] ?? 0,
+                    y: -(yArr[i] ?? 0),
+                    charge: chargeMap.get(aid) || 0,
+                    attachedHCount: 0,
+                    isExplicitH: el === 'H'
+                };
+                atomByAid.set(aid, node);
+                allAtoms.push(node);
+            }
+
+            const rawBonds = [];
+            if (comp.bonds && Array.isArray(comp.bonds.aid1)) {
+                for (let i = 0; i < comp.bonds.aid1.length; i++) {
+                    const a1 = atomByAid.get(comp.bonds.aid1[i]);
+                    const a2 = atomByAid.get(comp.bonds.aid2[i]);
+                    const order = comp.bonds.order[i] || 1;
+                    if (a1 && a2) {
+                        rawBonds.push({ a1, a2, order });
+                        if (a1.el !== 'H' && a2.el === 'H') a1.attachedHCount++;
+                        if (a2.el !== 'H' && a1.el === 'H') a2.attachedHCount++;
+                    }
+                }
+            }
+
+            // 表示モードに応じて描画する原子・結合をフィルタリング
+            const hasExplicitH = allAtoms.some(a => a.el === 'H');
+            const heavyAtoms = allAtoms.filter(a => a.el !== 'H');
+            const visibleAtoms = (mode === 'full' && hasExplicitH) ? allAtoms : heavyAtoms;
+            const visibleAidSet = new Set(visibleAtoms.map(a => a.aid));
+            const visibleBonds = rawBonds.filter(b => visibleAidSet.has(b.a1.aid) && visibleAidSet.has(b.a2.aid));
+
+            if (visibleAtoms.length === 0) return false;
+
+            // PubChem座標上の平均結合長を算出してスケーリング基準にする
+            let totalBondDist = 0, bondCount = 0;
+            for (const b of visibleBonds) {
+                const d = Math.hypot(b.a2.x - b.a1.x, b.a2.y - b.a1.y);
+                if (d > 0.01) { totalBondDist += d; bondCount++; }
+            }
+            const avgRawBondLen = bondCount > 0 ? (totalBondDist / bondCount) : 1.0;
+
+            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+            for (const a of visibleAtoms) {
+                if (a.x < minX) minX = a.x;
+                if (a.x > maxX) maxX = a.x;
+                if (a.y < minY) minY = a.y;
+                if (a.y > maxY) maxY = a.y;
+            }
+
+            const spanX = Math.max(avgRawBondLen * 1.5, maxX - minX);
+            const spanY = Math.max(avgRawBondLen * 1.2, maxY - minY);
+            const padX = 64;
+            const padY = 52;
+
+            // 1結合あたりの画面上の長さが最大でも82px程度に収まるよう調整
+            const maxScaleByBond = 82 / avgRawBondLen;
+            const scale = Math.min(
+                (canvas.width - padX * 2) / spanX,
+                (canvas.height - padY * 2) / spanY,
+                maxScaleByBond
+            );
+
+            const centerX = (minX + maxX) / 2;
+            const centerY = (minY + maxY) / 2;
+            const bondScaleRatio = (avgRawBondLen * scale) / 74;
+
+            function toScreen(pt) {
+                return {
+                    x: canvas.width / 2 + (pt.x - centerX) * scale,
+                    y: canvas.height / 2 + (pt.y - centerY) * scale
+                };
+            }
+
+            // 1. 結合線の描画（120°ジグザグ・二重結合・三重結合）
+            ctx.strokeStyle = '#1e293b';
+            ctx.lineCap = 'round';
+            const baseLineW = Math.max(2.0, 2.6 * bondScaleRatio);
+
+            for (const b of visibleBonds) {
+                const p1 = toScreen(b.a1);
+                const p2 = toScreen(b.a2);
+                const dx = p2.x - p1.x;
+                const dy = p2.y - p1.y;
+                const len = Math.hypot(dx, dy) || 1;
+                const nx = -dy / len;
+                const ny = dx / len;
+
+                ctx.lineWidth = baseLineW;
+
+                if (b.order === 1) {
+                    ctx.beginPath();
+                    ctx.moveTo(p1.x, p1.y);
+                    ctx.lineTo(p2.x, p2.y);
+                    ctx.stroke();
+                } else if (b.order === 2) {
+                    const offset = Math.max(3.8, 5.0 * bondScaleRatio);
+                    ctx.beginPath();
+                    ctx.moveTo(p1.x + nx * offset, p1.y + ny * offset);
+                    ctx.lineTo(p2.x + nx * offset, p2.y + ny * offset);
+                    ctx.moveTo(p1.x - nx * offset, p1.y - ny * offset);
+                    ctx.lineTo(p2.x - nx * offset, p2.y - ny * offset);
+                    ctx.stroke();
+                } else if (b.order === 3) {
+                    const offset = Math.max(5.0, 6.6 * bondScaleRatio);
+                    ctx.beginPath();
+                    ctx.moveTo(p1.x, p1.y);
+                    ctx.lineTo(p2.x, p2.y);
+                    ctx.moveTo(p1.x + nx * offset, p1.y + ny * offset);
+                    ctx.lineTo(p2.x + nx * offset, p2.y + ny * offset);
+                    ctx.moveTo(p1.x - nx * offset, p1.y - ny * offset);
+                    ctx.lineTo(p2.x - nx * offset, p2.y - ny * offset);
+                    ctx.stroke();
+                }
+            }
+
+            // 2. 原子ラベル・官能基バッジの描画
+            const subDigits = {'2':'₂','3':'₃','4':'₄'};
+            const badgeStyleMap = {
+                'C':  { color: '#1e293b', bg: '#f8fafc', border: '#cbd5e1' },
+                'H':  { color: '#334155', bg: '#ffffff', border: 'transparent' },
+                'O':  { color: '#dc2626', bg: '#fef2f2', border: '#fecaca' },
+                'N':  { color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' },
+                'Cl': { color: '#059669', bg: '#ecfdf5', border: '#a7f3d0' },
+                'Br': { color: '#92400e', bg: '#fffbeb', border: '#fde68a' },
+                'S':  { color: '#b45309', bg: '#fffbeb', border: '#fde68a' },
+                'F':  { color: '#0d9488', bg: '#f0fdfa', border: '#99f6e4' },
+                'I':  { color: '#7c3aed', bg: '#f5f3ff', border: '#ddd6fe' }
+            };
+
+            for (const a of visibleAtoms) {
+                // 骨格構造式（skeletal）モード時は、炭素(C)の記号を非表示にして折れ線のみにする（単一原子メタンを除く）
+                if (mode === 'skeletal' && a.el === 'C' && heavyAtoms.length > 1) {
+                    continue;
+                }
+
+                const sp = toScreen(a);
+                let label = a.el;
+
+                if ((mode === 'condensed' || mode === 'skeletal') && a.attachedHCount > 0) {
+                    const hSub = a.attachedHCount > 1 ? (subDigits[a.attachedHCount] || a.attachedHCount) : '';
+                    label = `${a.el}H${hSub}`;
+                }
+
+                const st = badgeStyleMap[a.el] || badgeStyleMap['C'];
+
+                if (mode === 'condensed') {
+                    const fontSize = Math.round(Math.max(13, 15 * bondScaleRatio));
+                    ctx.font = `bold ${fontSize}px 'Inter', sans-serif`;
+                    const textW = ctx.measureText(label).width;
+                    const rx = Math.max(15 * bondScaleRatio, textW / 2 + 6 * bondScaleRatio);
+                    const ry = 14 * bondScaleRatio;
+
+                    ctx.fillStyle = st.bg;
+                    ctx.strokeStyle = st.border;
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    if (ctx.roundRect) {
+                        ctx.roundRect(sp.x - rx, sp.y - ry, rx * 2, ry * 2, 9 * bondScaleRatio);
+                    } else {
+                        ctx.arc(sp.x, sp.y, rx, 0, Math.PI * 2);
+                    }
+                    ctx.fill();
+                    ctx.stroke();
+
+                    ctx.fillStyle = st.color;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(label, sp.x, sp.y + 0.5);
+                } else {
+                    const fontSize = Math.round(Math.max(13, (a.isExplicitH ? 15 : 18) * bondScaleRatio));
+                    ctx.font = `bold ${fontSize}px 'Inter', sans-serif`;
+                    const textMetrics = ctx.measureText(label);
+                    const bgRx = Math.max(fontSize * 0.6, textMetrics.width / 2 + 4 * bondScaleRatio);
+                    const bgRy = fontSize * 0.6;
+
+                    ctx.fillStyle = '#ffffff';
+                    ctx.beginPath();
+                    if (ctx.roundRect) {
+                        ctx.roundRect(sp.x - bgRx, sp.y - bgRy, bgRx * 2, bgRy * 2, bgRy);
+                    } else {
+                        ctx.arc(sp.x, sp.y, bgRx, 0, Math.PI * 2);
+                    }
+                    ctx.fill();
+
+                    ctx.fillStyle = st.color;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(label, sp.x, sp.y + 1);
+                }
+            }
+            return true;
+        }
+
+        // キャンバスにSMILESまたはPubChem 2D精密座標から構造式を描画する統合ヘルパー
+        function drawStructureOnCanvas(smiles, errorEl, pubchemRecord = null) {
             const canvas = document.getElementById('structure-canvas');
             try {
-                drawHighSchoolStructure(smiles, canvas, structureDisplayMode);
+                if (pubchemRecord) {
+                    const ok = drawPubChem2DRecord(pubchemRecord, canvas, structureDisplayMode);
+                    if (ok) return;
+                }
+                if (smiles) {
+                    drawHighSchoolStructure(smiles, canvas, structureDisplayMode);
+                }
             } catch (err) {
                 console.error("構造式描画エラー:", err);
                 if (errorEl) {
@@ -2860,8 +3095,21 @@
                 loadingEl.classList.add('hidden');
                 resultEl.classList.remove('hidden');
 
+                // PubChem公式の2D精密座標データ（record_type=2d）を並行して取得し、プロ品質の120°ジグザグ座標で描画
+                let record2d = null;
+                try {
+                    const recUrl = `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${props.CID}/record/JSON?record_type=2d`;
+                    const recRes = await fetch(recUrl);
+                    if (recRes.ok) {
+                        record2d = await recRes.json();
+                    }
+                } catch (e) {
+                    console.warn("2D精密座標の取得をスキップし、標準レイアウトを使用します:", e);
+                }
+
                 lastDrawnSmiles = smiles;
-                drawStructureOnCanvas(smiles, errorEl);
+                lastDrawnPubChemRecord = record2d;
+                drawStructureOnCanvas(smiles, errorEl, record2d);
 
             } catch (err) {
                 loadingEl.classList.add('hidden');
